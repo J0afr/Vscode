@@ -11,8 +11,20 @@
     display: flex;
     justify-content: center;
     align-items: center;
+    
 }
-#Footer{
+#Text{
+    padding: 100px;
+    color:blue;
+    height:20px;
+    position: absolute;
+    top:1px;
+    left:2px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+#PiedDePage{
     background-color: #00ffc8;
     padding: 20px;
     display: flex;
@@ -53,6 +65,7 @@
     justify-content: center;
     align-items: center;
 }
+
 
 
 
