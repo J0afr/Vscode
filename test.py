@@ -22,4 +22,4 @@ def var_poly_second_degre(a,b,c):
             resultat= "La fonction est décroissante sur  ]-inf ; "+str(x)+"] puis croissante sur ["+str(x)+" ; +inf[."
         else:
             resultat ="La fonction est croissante sur  ]-inf ; "+str(x)+"] puis décroissante sur ["+str(x)+" ; +inf[."
-    return resultat 
+    return resultat
