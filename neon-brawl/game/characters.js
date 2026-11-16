@@ -1,47 +1,90 @@
 // =============================================================================
-// characters.js — Les 3 personnages et la table des attaques.
+// characters.js — Les 6 personnages (un par élément) et la table des attaques.
 // Fichier partagé serveur / navigateur (voir constants.js).
 // =============================================================================
 (function (racine) {
   // ---------------------------------------------------------------------------
+  // Éléments
+  // ---------------------------------------------------------------------------
+  // Chaque personnage appartient à un élément, qui lui donne sa couleur et un
+  // effet particulier quand ses coups touchent (appliqué dans combat.js).
+  const ELEMENTS = {
+    feu:    { nom: 'Feu',    couleur: '#ff6a2b', effet: 'Brûlure : la victime continue de prendre des dégâts' },
+    eau:    { nom: 'Eau',    couleur: '#4d8dff', effet: 'Vague : repousse plus fort, même à 0 %' },
+    terre:  { nom: 'Terre',  couleur: '#9be04a', effet: 'Séisme : brise les boucliers très vite' },
+    air:    { nom: 'Air',    couleur: '#7dffd0', effet: 'Bourrasque : envoie plus haut, et 2 sauts en l\'air' },
+    foudre: { nom: 'Foudre', couleur: '#ffe14a', effet: 'Paralysie : fige la victime plus longtemps' },
+    glace:  { nom: 'Glace',  couleur: '#c4f1ff', effet: 'Gel : la victime reste sonnée plus longtemps' },
+  };
+
+  // ---------------------------------------------------------------------------
   // Personnages
   // ---------------------------------------------------------------------------
+  //   element     : clé dans ELEMENTS
   //   l, h        : largeur et hauteur du corps (zone où l'on peut être touché)
   //   taille      : échelle des attaques (portée)
   //   marche/course : vitesses au sol (px/tick)
   //   vitAir, accelAir : contrôle en l'air
   //   saut, doubleSaut : vitesse verticale au décollage
+  //   sautsAir    : nombre de sauts possibles en l'air
   //   gravite, chuteMax, chuteRapide : chute
   //   poids       : plus il est élevé, moins on est éjecté loin
   //   puissance   : multiplicateur de dégâts
   //   cadence     : multiplicateur de durée des attaques (< 1 = plus rapide)
   const PERSOS = {
-    zip: {
-      nom: 'Zip', description: 'Rapide et léger',
-      l: 44, h: 66, taille: 1.1,
-      marche: 3.4, course: 7.6, accelSol: 1.3,
-      vitAir: 5.6, accelAir: 0.6,
-      saut: 13.6, doubleSaut: 12.6,
-      gravite: 0.62, chuteMax: 11, chuteRapide: 16.5,
-      poids: 0.8, puissance: 0.85, cadence: 0.8,
+    braise: {
+      nom: 'Braise', element: 'feu', description: 'Agressive, frappe fort',
+      l: 50, h: 76, taille: 1.25,
+      marche: 3.0, course: 6.6, accelSol: 1.0,
+      vitAir: 5.1, accelAir: 0.48,
+      saut: 13.2, doubleSaut: 12.2, sautsAir: 1,
+      gravite: 0.62, chuteMax: 11, chuteRapide: 16,
+      poids: 0.95, puissance: 1.1, cadence: 0.95,
     },
-    nova: {
-      nom: 'Nova', description: 'Équilibrée',
+    ondine: {
+      nom: 'Ondine', element: 'eau', description: 'Équilibrée, bon retour sur l\'arène',
       l: 52, h: 78, taille: 1.3,
-      marche: 2.9, course: 6.3, accelSol: 1.0,
-      vitAir: 5.0, accelAir: 0.45,
-      saut: 13.2, doubleSaut: 12.2,
-      gravite: 0.6, chuteMax: 10.5, chuteRapide: 15.5,
+      marche: 2.9, course: 6.2, accelSol: 1.0,
+      vitAir: 5.2, accelAir: 0.5,
+      saut: 13.4, doubleSaut: 12.8, sautsAir: 1,
+      gravite: 0.56, chuteMax: 10, chuteRapide: 15,
       poids: 1.0, puissance: 1.0, cadence: 1,
     },
     brok: {
-      nom: 'Brok', description: 'Lourd et puissant',
+      nom: 'Brok', element: 'terre', description: 'Lourd et puissant',
       l: 66, h: 90, taille: 1.55,
       marche: 2.3, course: 5.1, accelSol: 0.7,
       vitAir: 4.3, accelAir: 0.34,
-      saut: 13.0, doubleSaut: 11.8,
+      saut: 13.0, doubleSaut: 11.8, sautsAir: 1,
       gravite: 0.7, chuteMax: 12, chuteRapide: 17.5,
       poids: 1.3, puissance: 1.25, cadence: 1.2,
+    },
+    zephyr: {
+      nom: 'Zéphyr', element: 'air', description: 'Très léger, plane et saute 3 fois',
+      l: 46, h: 70, taille: 1.15,
+      marche: 3.1, course: 6.8, accelSol: 1.1,
+      vitAir: 5.8, accelAir: 0.62,
+      saut: 13.0, doubleSaut: 12.0, sautsAir: 2,
+      gravite: 0.5, chuteMax: 9, chuteRapide: 14.5,
+      poids: 0.75, puissance: 0.85, cadence: 0.9,
+    },
+    zip: {
+      nom: 'Zip', element: 'foudre', description: 'Le plus rapide, léger',
+      l: 44, h: 66, taille: 1.1,
+      marche: 3.4, course: 7.6, accelSol: 1.3,
+      vitAir: 5.6, accelAir: 0.6,
+      saut: 13.6, doubleSaut: 12.6, sautsAir: 1,
+      gravite: 0.62, chuteMax: 11, chuteRapide: 16.5,
+      poids: 0.8, puissance: 0.85, cadence: 0.8,
+    },
+    givre: {
+      nom: 'Givre', element: 'glace', description: 'Solide, glisse un peu, coups lents',
+      l: 58, h: 84, taille: 1.42,
+      marche: 2.6, course: 5.7, accelSol: 0.45,
+      vitAir: 4.6, accelAir: 0.4,
+      saut: 13.0, doubleSaut: 12.0, sautsAir: 1,
+      gravite: 0.66, chuteMax: 11.5, chuteRapide: 17,
+      poids: 1.15, puissance: 1.1, cadence: 1.1,
     },
   };
 
@@ -83,14 +126,14 @@
   function infosAttaque(joueur) {
     const attaque = ATTAQUES[joueur.atk];
     if (!attaque) return null;
-    const perso = PERSOS[joueur.perso] || PERSOS.nova;
+    const perso = PERSOS[joueur.perso] || PERSOS.ondine;
     const debut = Math.round(attaque.debut * perso.cadence);
     const fin = debut + Math.max(2, Math.round(attaque.actif * perso.cadence));
     const total = Math.max(fin + 2, Math.round(attaque.total * perso.cadence));
     return { attaque, perso, debut, fin, total };
   }
 
-  const persos = { PERSOS, ATTAQUES, infosAttaque };
+  const persos = { ELEMENTS, PERSOS, ATTAQUES, infosAttaque };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = persos;

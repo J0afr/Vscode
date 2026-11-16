@@ -16,7 +16,7 @@ const DELAI_REAPPARITION = 70; // ticks entre l'éjection et le retour en jeu
 
 /** Vrai si le cercle (cx, cy, r) touche le corps du joueur v. */
 function cercleToucheCorps(cx, cy, r, v) {
-  const S = PERSOS[v.perso] || PERSOS.nova;
+  const S = PERSOS[v.perso] || PERSOS.ondine;
   // Point du rectangle du corps le plus proche du centre du cercle.
   const px = Math.max(v.x - S.l / 2, Math.min(v.x + S.l / 2, cx));
   const py = Math.max(v.y - S.h, Math.min(v.y, cy));
@@ -68,17 +68,19 @@ function resoudreCoups(joueurs, evenements) {
 
 function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
   const { attaque, perso } = infos;
+  const element = perso.element;
   // Une attaque chargée à fond fait 40 % de dégâts en plus et éjecte plus loin.
   const charge = Math.min(1, a.charge / C.CHARGE_MAX);
   const degats = attaque.deg * perso.puissance * (1 + 0.4 * charge);
-  const sv = PERSOS[v.perso] || PERSOS.nova;
+  const sv = PERSOS[v.perso] || PERSOS.ondine;
   // Point d'impact, à mi-chemin entre la zone de frappe et la victime.
   const ix = (cx + v.x) / 2;
   const iy = (cy + v.y - sv.h / 2) / 2;
 
   // --- Coup paré par le bouclier ---
   if (v.etat === 'bouclier') {
-    v.bouclier -= degats * 1.3;
+    // Terre : les coups de terre usent le bouclier bien plus vite.
+    v.bouclier -= degats * (element === 'terre' ? 2.2 : 1.3);
     v.vx = (v.x >= a.x ? 1 : -1) * 2.5;
     a.gel = v.gel = 4;
     if (v.bouclier <= 0) {
@@ -92,10 +94,14 @@ function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
 
   // --- Coup reçu ---
   v.degats += degats;
-  const ejection = ((attaque.base + v.degats * attaque.ech) * (1 + 0.3 * charge)) / sv.poids;
+  // Eau : une poussée de base plus forte.
+  const base = attaque.base + (element === 'eau' ? 1.3 : 0);
+  const ejection = ((base + v.degats * attaque.ech) * (1 + 0.3 * charge)) / sv.poids;
 
   const cote = attaque.deuxCotes ? (v.x === a.x ? a.dir : Math.sign(v.x - a.x)) : a.dir;
-  const angle = (attaque.angle * Math.PI) / 180;
+  // Air : les coups qui partent vers l'avant envoient plus haut.
+  const releve = element === 'air' && attaque.angle >= 0 && attaque.angle < 75 ? 14 : 0;
+  const angle = ((attaque.angle + releve) * Math.PI) / 180;
   v.vx = Math.cos(angle) * ejection * cote;
   v.vy = -Math.sin(angle) * ejection;
   // Frappé vers le bas alors qu'on est au sol : on rebondit.
@@ -114,11 +120,16 @@ function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
   a.gel = gel;
   v.gel = gel;
 
+  // --- Effets des autres éléments ---
+  if (element === 'feu') v.brulure = 120;                       // brûle pendant 2 s
+  if (element === 'foudre') v.gel += 6;                         // paralysie
+  if (element === 'glace') v.sonne = Math.min(115, Math.round(v.sonne * 1.3)); // gel
+
   evenements.push({
     t: 'coup',
     x: Math.round(ix), y: Math.round(iy),
     f: Math.round(ejection * 10) / 10,   // force, pour doser les effets
-    id: v.id, de: a.id,
+    id: v.id, de: a.id, el: element,
   });
 }
 
@@ -153,13 +164,24 @@ function gererSorties(joueurs, evenements) {
   return prets;
 }
 
+/** Effets qui durent dans le temps : la brûlure du feu (+3 % en 2 secondes). */
+function effetsContinus(joueurs) {
+  for (const p of joueurs) {
+    if (!(p.brulure > 0) || p.etat === 'mort') continue;
+    p.brulure--;
+    if (p.brulure % 20 === 0) p.degats += 0.5;
+  }
+}
+
 /** Remet un joueur en jeu au-dessus de l'arène, brièvement invulnérable. */
 function reapparaitre(p, x, y = 140) {
   const garde = { nAtk: p.nAtk, prev: p.prev };
   Object.assign(p, physics.nouvelEtat(x, y), garde);
   p.degats = 0;
+  p.brulure = 0;
+  p.sauts = (PERSOS[p.perso] || PERSOS.ondine).sautsAir;
   p.invul = 120;
   p.dir = x < (C.BLOC.x0 + C.BLOC.x1) / 2 ? 1 : -1;
 }
 
-module.exports = { resoudreCoups, gererSorties, reapparaitre };
+module.exports = { resoudreCoups, effetsContinus, gererSorties, reapparaitre };

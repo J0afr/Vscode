@@ -23,7 +23,7 @@
     'x', 'y', 'vx', 'vy',   // position des pieds et vitesse
     'dir',                  // sens du regard : 1 = droite, -1 = gauche
     'sol',                  // vrai si le joueur est posé sur une surface
-    'sauts',                // doubles sauts restants
+    'sauts',                // sauts aériens restants
     'etat',                 // 'libre' | 'attaque' | 'charge' | 'bouclier' | 'esquive' | 'sonne' | 'mort'
     't',                    // nombre de ticks passés dans l'état courant
     'atk',                  // nom de l'attaque (ou du type d'esquive) en cours
@@ -288,11 +288,11 @@
   // ---------------------------------------------------------------------------
   // Déplacement et collisions
   // ---------------------------------------------------------------------------
-  function atterrir(p, y) {
+  function atterrir(p, y, S) {
     p.y = y;
     p.vy = 0;
     p.sol = true;
-    p.sauts = 1;
+    p.sauts = S.sautsAir;
     p.rapide = false;
     p.esqAir = false;
     // Une attaque aérienne s'interrompt en touchant le sol.
@@ -323,12 +323,12 @@
       // On ne se pose que si l'on arrive PAR LE DESSUS de la surface.
       const dansBloc = p.x >= C.BLOC.x0 - MARGE_BORD && p.x <= C.BLOC.x1 + MARGE_BORD;
       if (dansBloc && yAvant <= C.SOL_Y && p.y >= C.SOL_Y) {
-        atterrir(p, C.SOL_Y);
+        atterrir(p, C.SOL_Y, S);
       } else if (p.traverse === 0) {
         for (const pl of C.PLATEFORMES) {
           const dessus = p.x >= pl.x0 - MARGE_BORD && p.x <= pl.x1 + MARGE_BORD;
           if (dessus && yAvant <= pl.y && p.y >= pl.y) {
-            atterrir(p, pl.y);
+            atterrir(p, pl.y, S);
             break;
           }
         }
@@ -354,7 +354,7 @@
    * @param {number} touches  masque de bits des touches enfoncées
    */
   function avancerJoueur(p, touches) {
-    const S = PERSOS[p.perso] || PERSOS.nova;
+    const S = PERSOS[p.perso] || PERSOS.ondine;
 
     if (p.etat === 'mort') { p.prev = touches; return; }
     // Hit freeze : tout est figé. On ne met pas « prev » à jour, pour qu'une

@@ -44,17 +44,27 @@ tu es éjecté loin. Tu perds une vie en sortant de l'écran. Chacun a 3 vies.
 | Attaque forte, à maintenir pour la charger | `K` ou `V` |
 | Bouclier | `L` ou `B` |
 | Esquive (roulade si une direction est maintenue) | `Maj` ou `N` |
-| Changer de personnage | `1` Zip, `2` Nova, `3` Brok |
+| Changer de personnage | `1` à `6` |
 
 Maintenir haut, bas ou un côté en attaquant change le coup. En l'air, les deux
 boutons d'attaque donnent une attaque aérienne. Un bouclier maintenu trop
 longtemps ou trop frappé se brise et laisse sonné.
 
-Les personnages :
+### Les 6 personnages
 
-- **Zip** : rapide et léger, coups vifs mais moins puissants, s'envole facilement.
-- **Nova** : équilibrée.
-- **Brok** : lent, lourd et puissant, difficile à éjecter.
+Chaque personnage appartient à un élément, qui ajoute un effet à tous ses coups.
+
+| Touche | Personnage | Élément | Style | Effet de l'élément |
+| --- | --- | --- | --- | --- |
+| `1` | **Braise** | Feu | Agressive, frappe fort | Brûlure : la victime prend encore 3 % en 2 secondes |
+| `2` | **Ondine** | Eau | Équilibrée, revient bien sur l'arène | Vague : repousse plus fort, même à 0 % |
+| `3` | **Brok** | Terre | Lent, lourd, très puissant | Séisme : brise les boucliers très vite |
+| `4` | **Zéphyr** | Air | Très léger, plane, 2 sauts en l'air | Bourrasque : envoie plus haut |
+| `5` | **Zip** | Foudre | Le plus rapide, léger | Paralysie : fige la victime plus longtemps à l'impact |
+| `6` | **Givre** | Glace | Solide, glisse un peu, coups lents | Gel : la victime reste sonnée plus longtemps |
+
+Pour ajouter un personnage : une entrée dans `PERSOS` (`game/characters.js`) et une
+entrée dans `STYLES` (`public/index.html`) pour son apparence.
 
 ## Organisation du code
 
@@ -62,7 +72,7 @@ Les personnages :
 | --- | --- |
 | `server.js` | Serveur Express + WebSocket, boucle de jeu à 60 Hz, envoi de l'état à 30 Hz |
 | `game/constants.js` | Constantes partagées : arène, règles, touches |
-| `game/characters.js` | Statistiques des personnages et table des attaques |
+| `game/characters.js` | Éléments, statistiques des 6 personnages et table des attaques |
 | `game/physics.js` | Simulation d'un joueur pour un tick : déplacements, plateformes, actions |
 | `game/combat.js` | Coups, dégâts, éjections, bouclier, pertes de vie (serveur uniquement) |
 | `public/index.html` | Tout le client dans un seul fichier : réseau, affichage, effets, sons |

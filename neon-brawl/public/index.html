@@ -77,7 +77,7 @@
     <span>Esquive <kbd>Maj</kbd> / <kbd>N</kbd></span>
   </div>
   <div>
-    <span>Personnage : <kbd>1</kbd> Zip · <kbd>2</kbd> Nova · <kbd>3</kbd> Brok</span>
+    <span>Personnage : <kbd>1</kbd> Braise · <kbd>2</kbd> Ondine · <kbd>3</kbd> Brok · <kbd>4</kbd> Zéphyr · <kbd>5</kbd> Zip · <kbd>6</kbd> Givre</span>
   </div>
 </div>
 
@@ -105,7 +105,7 @@
 
   const C = NB.constants;
   const physics = NB.physics;
-  const { PERSOS, infosAttaque } = NB.persos;
+  const { ELEMENTS, PERSOS, infosAttaque } = NB.persos;
   const T = C.TOUCHE;
 
   const canvas = document.getElementById('jeu');
@@ -216,7 +216,12 @@
     KeyJ: T.LEGER, KeyK: T.FORT, KeyL: T.BOUCLIER, ShiftLeft: T.ESQUIVE, ShiftRight: T.ESQUIVE,
     KeyC: T.LEGER, KeyV: T.FORT, KeyB: T.BOUCLIER, KeyN: T.ESQUIVE,
   };
-  const CHOIX_PERSO = { Digit1: 'zip', Digit2: 'nova', Digit3: 'brok', Numpad1: 'zip', Numpad2: 'nova', Numpad3: 'brok' };
+  // Touches 1 à 6 (rangée du haut ou pavé numérique) : choix du personnage.
+  const CHOIX_PERSO = {};
+  Object.keys(PERSOS).forEach((cle, i) => {
+    CHOIX_PERSO['Digit' + (i + 1)] = cle;
+    CHOIX_PERSO['Numpad' + (i + 1)] = cle;
+  });
   const enfoncees = new Set();
   // Touches enfoncées depuis le dernier tick : un appui très bref (enfoncé puis
   // relâché entre deux ticks) est ainsi quand même pris en compte.
@@ -251,7 +256,7 @@
   let monId = null;
 
   // Joueur local (prédit) : mêmes champs que sur le serveur.
-  const moi = Object.assign(physics.nouvelEtat(0, 0), { perso: 'nova', connu: false });
+  const moi = Object.assign(physics.nouvelEtat(0, 0), { perso: 'ondine', connu: false });
   let precedent = { x: 0, y: 0 };      // position au tick précédent (lissage d'affichage)
   let enAttente = [];                   // inputs envoyés, pas encore acquittés
   let seq = 0;                          // numéro du prochain input
@@ -404,7 +409,8 @@
     if (ev.t === 'coup') {
       sons.coup(ev.f);
       etincelles(ev.x, ev.y, '#ffffff', 6 + ev.f, 3 + ev.f * 0.5);
-      etincelles(ev.x, ev.y, couleur, 4 + ev.f * 0.6, 2 + ev.f * 0.4);
+      const teinte = ELEMENTS[ev.el] ? ELEMENTS[ev.el].couleur : couleur;
+      etincelles(ev.x, ev.y, teinte, 8 + ev.f, 2 + ev.f * 0.5);
       ondes.push({ x: ev.x, y: ev.y, r: 8, vr: 3 + ev.f * 0.3, vie: 14, max: 14, couleur: '#ffffff' });
       // Tremblement d'écran uniquement sur les gros coups.
       if (ev.f > 11) secousse = Math.max(secousse, Math.min(22, ev.f * 0.9));
@@ -580,15 +586,29 @@
     return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
   }
 
+  // Apparence de chaque personnage : forme de la tête, du corps, et attribut.
+  const STYLES = {
+    braise: { tete: 'rond', attribut: 'flammes' },
+    ondine: { tete: 'goutte', attribut: 'bulles', robe: true },
+    brok:   { tete: 'carre', attribut: 'cornes', large: true, grossesMains: true, sourcils: true },
+    zephyr: { tete: 'rond', attribut: 'ailes', robe: true },
+    zip:    { tete: 'rond', attribut: 'oreilles' },
+    givre:  { tete: 'hexagone', attribut: 'cristaux', large: true, anguleux: true, sourcils: true },
+  };
+
   function dessinerPerso(j, estMoi) {
-    const S = PERSOS[j.perso] || PERSOS.nova;
+    const S = PERSOS[j.perso] || PERSOS.ondine;
     const l = S.l;
     const h = S.h;
     const e = S.taille;
     const maintenant = performance.now();
     const infos = (j.etat === 'attaque' || j.etat === 'charge') ? infosAttaque(j) : null;
     const touche = j.etat === 'sonne' && j.gel > 0; // vient de prendre un coup : flash blanc
-    const couleur = touche ? '#ffffff' : j.couleur;
+    // Le corps prend la couleur de l'élément ; la couleur du joueur sert au
+    // nom, au repère et au panneau du bas.
+    const teinte = j.nom === 'Mannequin' ? j.couleur : ELEMENTS[S.element].couleur;
+    const style = STYLES[j.perso] || STYLES.ondine;
+    const couleur = touche ? '#ffffff' : teinte;
 
     ctx.save();
     ctx.translate(j.x, j.y);
@@ -603,7 +623,7 @@
       const rayon = h * (0.55 + 0.35 * k) + Math.sin(maintenant / 40) * 3;
       const aura = ctx.createRadialGradient(0, -h / 2, rayon * 0.3, 0, -h / 2, rayon);
       aura.addColorStop(0, 'rgba(255,255,255,0)');
-      aura.addColorStop(0.8, j.couleur + '55');
+      aura.addColorStop(0.8, teinte + '55');
       aura.addColorStop(1, 'rgba(255,255,255,0)');
       ctx.fillStyle = aura;
       ctx.beginPath();
@@ -638,12 +658,12 @@
     const yTete = -h + rTete;
     const yHautCorps = yTete + rTete * 0.75;
     const yHanche = -h * 0.2;
-    const largeurCorps = l * (j.perso === 'brok' ? 0.8 : 0.6);
+    const largeurCorps = l * (style.large ? 0.8 : 0.6);
     const enMarche = j.sol && Math.abs(j.vx) > 0.5;
     const pas = enMarche ? Math.sin(j.x * 0.14) : 0;
 
     // -- Position des mains --
-    const rMain = l * (j.perso === 'brok' ? 0.24 : 0.16);
+    const rMain = l * (style.grossesMains ? 0.24 : 0.16);
     const reposAvant = [l * 0.46, -h * 0.42 - pas * 4];
     const reposArriere = [-l * 0.46, -h * 0.42 + pas * 4];
     let mainAvant = reposAvant;
@@ -693,7 +713,7 @@
     }
 
     // -- Écharpe de Zip (derrière le corps) --
-    if (j.perso === 'zip') {
+    if (style.attribut === 'oreilles') {
       const vent = Math.min(18, Math.abs(j.vx) * 2.5);
       ctx.save();
       ctx.lineWidth = 5;
@@ -710,23 +730,38 @@
       ctx.restore();
     }
 
+    // -- Ailes de Zéphyr (derrière le corps) : elles battent plus vite en l'air --
+    if (style.attribut === 'ailes') {
+      const battement = Math.sin(maintenant / (j.sol ? 260 : 60)) * 0.4;
+      for (const k of [1, 0.7]) {
+        ctx.save();
+        ctx.translate(-l * 0.2, yHautCorps + 6);
+        ctx.rotate(0.5 + battement * k + (1 - k));
+        ctx.beginPath();
+        ctx.ellipse(-l * 0.45 * k, 0, l * 0.45 * k, l * 0.17 * k, 0, 0, Math.PI * 2);
+        forme(couleur);
+        ctx.restore();
+      }
+    }
+
     // -- Tronc --
     ctx.beginPath();
-    if (j.perso === 'nova') {
-      // Nova : une petite robe en trapèze.
+    if (style.robe) {
+      // Une petite robe en trapèze.
       ctx.moveTo(-largeurCorps * 0.35, yHautCorps);
       ctx.lineTo(largeurCorps * 0.35, yHautCorps);
       ctx.lineTo(largeurCorps * 0.75, yHanche + 2);
       ctx.lineTo(-largeurCorps * 0.75, yHanche + 2);
       ctx.closePath();
     } else {
-      ctx.roundRect(-largeurCorps / 2, yHautCorps, largeurCorps, yHanche - yHautCorps + 3, 6);
+      ctx.roundRect(-largeurCorps / 2, yHautCorps, largeurCorps, yHanche - yHautCorps + 3, style.anguleux ? 0 : 6);
     }
     forme(couleur);
 
     // -- Attributs derrière la tête --
-    if (j.perso === 'zip') {
-      // Oreilles pointues.
+    const hautTete = yTete - rTete * 0.75;
+    if (style.attribut === 'oreilles') {
+      // Zip : oreilles pointues.
       for (const s of [-1, 1]) {
         ctx.beginPath();
         ctx.moveTo(s * rTete * 0.85, yTete - rTete * 0.35);
@@ -735,36 +770,76 @@
         ctx.closePath();
         forme(couleur);
       }
-    } else if (j.perso === 'brok') {
-      // Cornes.
+    } else if (style.attribut === 'cornes') {
+      // Brok : cornes.
       for (const s of [-1, 1]) {
         ctx.beginPath();
-        ctx.moveTo(s * rTete * 0.55, yTete - rTete * 0.75);
+        ctx.moveTo(s * rTete * 0.55, hautTete);
         ctx.quadraticCurveTo(s * rTete * 1.5, yTete - rTete * 0.9, s * rTete * 1.25, yTete - rTete * 1.7);
         ctx.quadraticCurveTo(s * rTete * 0.95, yTete - rTete * 1.0, s * rTete * 0.9, yTete - rTete * 0.3);
         ctx.closePath();
         forme(couleur);
       }
-    } else {
-      // Nova : antenne avec une boule lumineuse.
-      const bx = rTete * 0.35 + Math.sin(maintenant / 200) * 2;
-      const by = yTete - rTete * 1.65;
+    } else if (style.attribut === 'flammes') {
+      // Braise : une chevelure de flammes qui danse.
+      const pas = (rTete * 1.7) / 4;
+      ctx.beginPath();
+      ctx.moveTo(-rTete * 0.85, yTete - rTete * 0.3);
+      for (let i = 0; i < 4; i++) {
+        const x0 = -rTete * 0.85 + i * pas;
+        const hauteur = rTete * (0.75 + 0.3 * Math.sin(maintenant / 80 + i * 1.9)) * (i % 2 ? 1.25 : 0.85);
+        ctx.lineTo(x0 + pas * 0.2 - rTete * 0.25, hautTete - hauteur);
+        ctx.lineTo(x0 + pas, hautTete);
+      }
+      ctx.lineTo(rTete * 0.85, yTete - rTete * 0.3);
+      ctx.closePath();
+      forme(couleur);
+    } else if (style.attribut === 'cristaux') {
+      // Givre : une couronne d'éclats de glace.
+      for (const [dx, hauteur, demi] of [[-0.55, 0.8, 0.2], [0, 1.25, 0.24], [0.55, 0.9, 0.2]]) {
+        ctx.beginPath();
+        ctx.moveTo((dx - demi) * rTete, hautTete);
+        ctx.lineTo((dx + 0.1) * rTete, hautTete - hauteur * rTete);
+        ctx.lineTo((dx + demi) * rTete, hautTete);
+        ctx.closePath();
+        forme(couleur);
+      }
+    } else if (style.attribut === 'ailes') {
+      // Zéphyr : un anneau de vent au-dessus de la tête.
       ctx.shadowBlur = 10;
       ctx.beginPath();
-      ctx.moveTo(0, yTete - rTete);
-      ctx.quadraticCurveTo(0, by, bx, by);
+      ctx.ellipse(0, yTete - rTete * 1.4 + Math.sin(maintenant / 220) * 2, rTete * 0.62, rTete * 0.18, 0, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowBlur = 16;
-      ctx.beginPath();
-      ctx.arc(bx, by, 4.5 + Math.sin(maintenant / 150) * 1, 0, Math.PI * 2);
-      ctx.fill();
+    } else if (style.attribut === 'bulles') {
+      // Ondine : deux bulles qui flottent derrière elle.
+      ctx.shadowBlur = 8;
+      for (const [dx, dy, r, v] of [[-1.35, -0.9, 4.5, 260], [-1.1, -1.55, 3, 190]]) {
+        ctx.beginPath();
+        ctx.arc(dx * rTete, yTete + dy * rTete + Math.sin(maintenant / v) * 4, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
 
     // -- Tête --
     ctx.beginPath();
-    if (j.perso === 'brok') ctx.roundRect(-rTete, yTete - rTete * 0.9, rTete * 2, rTete * 1.8, rTete * 0.55);
-    else ctx.arc(0, yTete, rTete, 0, Math.PI * 2);
+    if (style.tete === 'carre') {
+      ctx.roundRect(-rTete, yTete - rTete * 0.9, rTete * 2, rTete * 1.8, rTete * 0.55);
+    } else if (style.tete === 'goutte') {
+      // Une goutte d'eau, la pointe vers le haut et un peu en arrière.
+      ctx.moveTo(-rTete * 0.25, yTete - rTete * 1.8);
+      ctx.quadraticCurveTo(rTete * 0.95, yTete - rTete * 0.85, rTete, yTete);
+      ctx.arc(0, yTete, rTete, 0, Math.PI);
+      ctx.quadraticCurveTo(-rTete * 0.95, yTete - rTete * 0.8, -rTete * 0.25, yTete - rTete * 1.8);
+      ctx.closePath();
+    } else if (style.tete === 'hexagone') {
+      for (let i = 0; i < 6; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 3;
+        ctx.lineTo(Math.cos(a) * rTete * 1.08, yTete + Math.sin(a) * rTete * 1.08);
+      }
+      ctx.closePath();
+    } else {
+      ctx.arc(0, yTete, rTete, 0, Math.PI * 2);
+    }
     forme(couleur);
 
     // -- Yeux --
@@ -790,7 +865,7 @@
         ctx.ellipse(ox, yTete, rTete * 0.14, rTete * (concentre ? 0.15 : 0.27), 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      if (j.perso === 'brok') {
+      if (style.sourcils) {
         // Sourcils froncés.
         ctx.strokeStyle = '#ffffff';
         ctx.lineWidth = 3;
@@ -816,8 +891,8 @@
         const r = rayon * e;
         const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
         halo.addColorStop(0, 'rgba(255,255,255,' + (0.75 * k) + ')');
-        halo.addColorStop(0.5, j.couleur + '88');
-        halo.addColorStop(1, j.couleur + '00');
+        halo.addColorStop(0.5, teinte + '88');
+        halo.addColorStop(1, teinte + '00');
         ctx.fillStyle = halo;
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -828,10 +903,10 @@
     // --- Bulle du bouclier (rétrécit quand le bouclier s'use) ---
     if (j.etat === 'bouclier') {
       const r = h * 0.72 * (0.45 + 0.55 * Math.max(0, j.bouclier) / C.BOUCLIER_MAX);
-      ctx.shadowColor = j.couleur;
+      ctx.shadowColor = teinte;
       ctx.shadowBlur = 18;
-      ctx.fillStyle = j.couleur + '33';
-      ctx.strokeStyle = j.couleur;
+      ctx.fillStyle = teinte + '33';
+      ctx.strokeStyle = teinte;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(0, -h / 2, r, 0, Math.PI * 2);
@@ -843,7 +918,7 @@
     ctx.globalAlpha = 1;
     ctx.shadowColor = '#000000';
     ctx.shadowBlur = 4;
-    ctx.fillStyle = estMoi ? '#ffffff' : '#c3cdf5';
+    ctx.fillStyle = j.couleur;
     ctx.font = 'bold 15px "Trebuchet MS", sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(j.nom, 0, -h - rTete * 0.9 - 14);
@@ -966,7 +1041,8 @@
       // Nom et personnage.
       ctx.font = 'bold 12px "Trebuchet MS", sans-serif';
       ctx.fillStyle = '#c3cdf5';
-      const perso = PERSOS[j.perso] ? PERSOS[j.perso].nom : '';
+      const P = PERSOS[j.perso];
+      const perso = P ? P.nom + ' (' + ELEMENTS[P.element].nom + ')' : '';
       ctx.fillText(j.nom + ' · ' + perso, x, y - 6);
 
       // Vies.
@@ -1064,11 +1140,23 @@
     for (const j of vivants) {
       // Traînée derrière un joueur éjecté à grande vitesse.
       if (j.etat === 'sonne' && Math.hypot(j.vx, j.vy) > 8) {
-        const S = PERSOS[j.perso] || PERSOS.nova;
+        const S = PERSOS[j.perso] || PERSOS.ondine;
         const vie = 16;
         particules.push({
           x: j.x + (Math.random() - 0.5) * 14, y: j.y - S.h / 2 + (Math.random() - 0.5) * 14,
           vx: 0, vy: 0, vie, max: vie, couleur: j.couleur, taille: 7,
+        });
+      }
+    }
+    for (const j of vivants) {
+      // Petites flammes sur un joueur qui brûle.
+      if (j.brulure && Math.random() < 0.6 * dt) {
+        const S = PERSOS[j.perso] || PERSOS.ondine;
+        const vie = 14 + Math.random() * 10;
+        particules.push({
+          x: j.x + (Math.random() - 0.5) * S.l, y: j.y - Math.random() * S.h,
+          vx: 0, vy: -1.5 - Math.random() * 1.5, vie, max: vie,
+          couleur: Math.random() < 0.5 ? '#ff6a2b' : '#ffd34a', taille: 4,
         });
       }
     }

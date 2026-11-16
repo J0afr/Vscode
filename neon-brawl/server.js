@@ -90,6 +90,7 @@ function creerJoueur(socket) {
     couleur: couleurLibre(),
     perso: LISTE_PERSOS[(id - 1) % LISTE_PERSOS.length],
     degats: 0,
+    brulure: 0,             // ticks de brûlure restants (élément feu)
     vies: C.VIES,
     touches: 0,             // dernières touches appliquées
     file: [],               // inputs reçus, pas encore simulés
@@ -116,7 +117,7 @@ function ajusterMannequin() {
     mannequin = creerJoueur(null);
     mannequin.nom = 'Mannequin';
     mannequin.couleur = '#9aa4c7';
-    mannequin.perso = 'nova';
+    mannequin.perso = 'ondine';
     placerMannequin();
   } else if (humains !== 1 && mannequin) {
     joueurs.delete(mannequin.id);
@@ -191,6 +192,7 @@ function avancerSimulation() {
 
   // 2. Les coups, puis les sorties d'écran.
   combat.resoudreCoups(liste, evenements);
+  combat.effetsContinus(liste);
   const prets = combat.gererSorties(liste, evenements);
 
   // 3. Arène libre : tout le monde revient, avec 3 vies neuves si besoin.
@@ -214,6 +216,7 @@ function diffuserEtat() {
       const s = {
         id: j.id, nom: j.nom, couleur: j.couleur, perso: j.perso,
         degats: Math.round(j.degats), vies: j.vies, acq: j.acquitte,
+        brulure: j.brulure > 0 ? 1 : 0,
       };
       for (const champ of physics.CHAMPS) {
         s[champ] = typeof j[champ] === 'number' ? arrondi(j[champ]) : j[champ];
