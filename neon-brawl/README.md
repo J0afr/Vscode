@@ -75,6 +75,7 @@ entrée dans `STYLES` (`public/index.html`) pour son apparence.
 | `game/characters.js` | Éléments, statistiques des 6 personnages et table des attaques |
 | `game/physics.js` | Simulation d'un joueur pour un tick : déplacements, plateformes, actions |
 | `game/combat.js` | Coups, dégâts, éjections, bouclier, pertes de vie (serveur uniquement) |
+| `game/local.js` | Partie sans serveur (menu, 2 joueurs sur un clavier, ordinateur) pour `neon-brawl.html` |
 | `public/index.html` | Tout le client dans un seul fichier : réseau, affichage, effets, sons |
 
 Le serveur injecte `constants.js`, `characters.js` et `physics.js` dans la page au
@@ -94,3 +95,27 @@ node neon-brawl-tout-en-un.js
 
 Ce fichier est fabriqué à partir des autres : après une modification du code, on
 le régénère avec `npm run assembler` (ne pas le modifier à la main).
+
+## Version « un seul fichier HTML » (Apache)
+
+`neon-brawl.html` est une page autonome : tout le jeu est dedans, sans Node.js.
+On la dépose sur un serveur web, ou on l'ouvre par double-clic.
+
+```bash
+sudo cp neon-brawl.html /var/www/html/index.html
+```
+
+Elle propose au démarrage :
+
+- **Joueur 2 (même clavier)** : deux personnes sur le même PC.
+- **Ordinateur** : seul contre un adversaire dirigé par le jeu.
+- **Mannequin d'entraînement** : vies illimitées.
+- **En réseau** : pour jouer entre plusieurs PC. Un serveur web comme Apache ne
+  sait que distribuer la page, il ne peut pas relayer les coups entre les PC :
+  il faut donc lancer en plus le serveur de jeu sur la même machine
+  (`npm start`, port 3000). La page s'y connecte toute seule.
+
+Touches en local : joueur 1 `ZQSD` + `F` `G` `H` `T`, joueur 2 flèches + `K` `L` `M` `O`.
+`Échap` revient au menu.
+
+Comme la version tout-en-un, ce fichier est régénéré par `npm run assembler`.

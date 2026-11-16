@@ -1041,13 +1041,14 @@ const PAGE_WEB = `<!DOCTYPE html>
   // ===========================================================================
   // On utilise event.code (position physique de la touche) : KeyW/KeyA/KeyS/KeyD
   // correspondent à ZQSD sur un clavier AZERTY et à WASD sur un QWERTY.
-  const TOUCHES = {
+  const TOUCHES_RESEAU = {
     ArrowLeft: T.GAUCHE, ArrowRight: T.DROITE, ArrowUp: T.HAUT, ArrowDown: T.BAS,
     KeyA: T.GAUCHE, KeyD: T.DROITE, KeyW: T.HAUT, KeyS: T.BAS,
     Space: T.SAUT,
     KeyJ: T.LEGER, KeyK: T.FORT, KeyL: T.BOUCLIER, ShiftLeft: T.ESQUIVE, ShiftRight: T.ESQUIVE,
     KeyC: T.LEGER, KeyV: T.FORT, KeyB: T.BOUCLIER, KeyN: T.ESQUIVE,
   };
+  let TOUCHES = TOUCHES_RESEAU;
   // Touches 1 à 6 (rangée du haut ou pavé numérique) : choix du personnage.
   const CHOIX_PERSO = {};
   Object.keys(PERSOS).forEach((cle, i) => {
@@ -1065,7 +1066,7 @@ const PAGE_WEB = `<!DOCTYPE html>
       enfoncees.add(e.code);
       appuisBrefs |= TOUCHES[e.code];
       e.preventDefault(); // empêche les flèches / Espace de faire défiler la page
-    } else if (e.code in CHOIX_PERSO && !e.repeat) {
+    } else if (!enLocal && e.code in CHOIX_PERSO && !e.repeat) {
       envoyer({ t: 'perso', perso: CHOIX_PERSO[e.code] });
     }
   });
@@ -1085,6 +1086,10 @@ const PAGE_WEB = `<!DOCTYPE html>
   // ÉTAT DU CLIENT
   // ===========================================================================
   let socket = null;
+  // Version « un seul fichier HTML » : NB.local existe et peut faire tourner la
+  // partie dans la page, sans serveur (voir game/local.js).
+  const LOCAL = NB.local || null;
+  let enLocal = false;
   let monId = null;
 
   // Joueur local (prédit) : mêmes champs que sur le serveur.
@@ -1095,7 +1100,7 @@ const PAGE_WEB = `<!DOCTYPE html>
   const erreur = { x: 0, y: 0 };        // écart de correction, résorbé en douceur
 
   // Derniers états reçus, pour interpoler les autres joueurs.
-  const DELAI_INTERPOLATION_MS = 100;
+  let delaiInterpolation = 100;         // retard d'affichage des autres joueurs (ms)
   let historique = [];                  // [{ temps, joueurs: Map(id -> joueur) }]
 
   // Effets visuels.
@@ -1114,7 +1119,14 @@ const PAGE_WEB = `<!DOCTYPE html>
 
   function connecter() {
     elStatut.textContent = 'connexion…';
-    socket = new WebSocket('ws://' + location.host);
+    if (enLocal) {
+      socket = LOCAL.creerSocket();
+    } else if (LOCAL) {
+      // Page servie par Apache : le serveur de jeu écoute à côté, sur le port 3000.
+      socket = new WebSocket('ws://' + (location.hostname || 'localhost') + ':3000');
+    } else {
+      socket = new WebSocket('ws://' + location.host);
+    }
 
     socket.addEventListener('message', (e) => {
       const msg = JSON.parse(e.data);
@@ -1129,7 +1141,9 @@ const PAGE_WEB = `<!DOCTYPE html>
     });
 
     socket.addEventListener('close', () => {
-      elStatut.textContent = 'déconnecté — nouvelle tentative…';
+      elStatut.textContent = LOCAL
+        ? 'serveur de jeu introuvable sur le port 3000 — nouvelle tentative…'
+        : 'déconnecté — nouvelle tentative…';
       monId = null;
       setTimeout(connecter, 1000);
     });
@@ -1153,7 +1167,7 @@ const PAGE_WEB = `<!DOCTYPE html>
     if (historique.length > 30) historique.shift();
 
     const humains = etat.joueurs.filter((j) => j.nom !== 'Mannequin').length;
-    elStatut.textContent = 'arène libre · ' + humains + ' joueur(s) en ligne';
+    elStatut.textContent = enLocal ? 'partie locale' : 'arène libre · ' + humains + ' joueur(s) en ligne';
 
     // --- Réconciliation du joueur local ---
     const officiel = carte.get(monId);
@@ -1288,7 +1302,7 @@ const PAGE_WEB = `<!DOCTYPE html>
   // ===========================================================================
   function joueursInterpoles() {
     if (historique.length === 0) return [];
-    const cible = performance.now() - DELAI_INTERPOLATION_MS;
+    const cible = performance.now() - delaiInterpolation;
 
     // On cherche les deux états qui encadrent l'instant « cible ».
     let a = historique[0];
@@ -2016,7 +2030,19 @@ const PAGE_WEB = `<!DOCTYPE html>
     etat: () => (historique.length ? [...historique[historique.length - 1].joueurs.values()] : []),
   };
 
-  connecter();
+  // Démarrage. Avec le serveur Node, on se connecte tout de suite. Dans la
+  // version « un seul fichier HTML », c'est le menu qui décide (local ou réseau).
+  NB.client = {
+    demarrer(options) {
+      enLocal = !!options.local;
+      if (enLocal) {
+        TOUCHES = options.touches;
+        delaiInterpolation = 20; // pas de réseau : presque aucun retard nécessaire
+      }
+      connecter();
+    },
+  };
+  if (!LOCAL) connecter();
   requestAnimationFrame(boucle);
 })();
 </script>

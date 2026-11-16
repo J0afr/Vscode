@@ -109,6 +109,24 @@ const faussesLectures = {
 charger('serveur');
 `;
 
+// =============================================================================
+// Deuxième fichier produit : « neon-brawl.html », une page autonome à déposer
+// telle quelle sur un serveur web (Apache…) ou à ouvrir par double-clic.
+// =============================================================================
+const balise = (titre, code) => `<script>\n// ---- ${titre} ----\n${code}\n</script>`;
+const partage = ['constants', 'characters', 'physics'].map((nom) => balise(`game/${nom}.js`, lire(`game/${nom}.js`)));
+// combat.js est écrit pour Node (require / module.exports) : on l'enveloppe.
+partage.push(balise('game/combat.js', `(function () {
+const module = { exports: {} };
+const require = (nom) => ({ './constants': NB.constants, './characters': NB.persos, './physics': NB.physics })[nom];
+${lire('game/combat.js')}
+NB.combat = module.exports;
+})();`));
+partage.push(balise('game/local.js', lire('game/local.js')));
+const pageAutonome = lire('public/index.html').replace('<!--NB_PARTAGE-->', () => partage.join('\n'));
+fs.writeFileSync(path.join(racine, 'neon-brawl.html'), pageAutonome + '\n');
+console.log(`Écrit : neon-brawl.html (${pageAutonome.split('\n').length} lignes)`);
+
 const cible = path.join(racine, 'neon-brawl-tout-en-un.js');
 fs.writeFileSync(cible, sortie);
 console.log(`Écrit : ${cible} (${sortie.split('\n').length} lignes)`);
