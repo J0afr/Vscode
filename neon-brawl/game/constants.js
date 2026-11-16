@@ -12,16 +12,37 @@
     TICK_HZ: 60,          // la physique tourne à 60 pas par seconde
     ETAT_TOUS_LES: 2,     // le serveur envoie l'état 1 tick sur 2 (30 fois/s)
 
-    // --- Arène (en pixels « logiques », le canvas est mis à l'échelle) ---
+    // --- Écran (pixels « logiques », le canvas est mis à l'échelle) ---
     LARGEUR: 1280,
     HAUTEUR: 720,
 
-    // --- Joueur (étape 1 : un simple carré) ---
-    TAILLE_JOUEUR: 48,
-    VITESSE: 6,           // pixels par tick
+    // --- Arène ---
+    // Bloc principal : plein, on ne passe pas au travers. Il descend jusqu'en
+    // bas de l'écran (une sorte de tour), ses côtés sont des murs.
+    SOL_Y: 520,
+    BLOC: { x0: 240, x1: 1040 },
+    // Plateformes flottantes : on les traverse par le dessous, et on peut se
+    // laisser tomber au travers avec BAS.
+    PLATEFORMES: [
+      { x0: 330, x1: 530, y: 400 },
+      { x0: 750, x1: 950, y: 400 },
+      { x0: 540, x1: 740, y: 285 },
+    ],
+    // Zones d'éjection : au-delà, on perd une vie.
+    SORTIE: { gauche: -230, droite: 1510, haut: -220, bas: 900 },
+
+    // --- Règles ---
+    VIES: 3,
+    BOUCLIER_MAX: 100,
+    CHARGE_MAX: 60,       // nombre de ticks pour charger une attaque forte à fond
+    ELAN_SAUT: 4,         // petit délai avant de décoller (permet HAUT + attaque)
 
     // --- Touches, codées sur un masque de bits pour un envoi compact ---
-    TOUCHE: { GAUCHE: 1, DROITE: 2, HAUT: 4, BAS: 8 },
+    TOUCHE: {
+      GAUCHE: 1, DROITE: 2, HAUT: 4, BAS: 8,
+      SAUT: 16, LEGER: 32, FORT: 64, BOUCLIER: 128, ESQUIVE: 256,
+    },
+    MASQUE_TOUCHES: 511,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

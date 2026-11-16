@@ -7,6 +7,11 @@
 //   3. Faire tourner la simulation à 60 Hz : le serveur fait AUTORITÉ, les
 //      navigateurs n'envoient que leurs touches.
 //   4. Diffuser l'état du jeu 30 fois par seconde.
+//
+// Mode de jeu actuel : « arène libre ». Tous les joueurs connectés se battent
+// ensemble ; quand un joueur a perdu ses 3 vies il repart avec 3 vies neuves.
+// Un joueur seul affronte un mannequin d'entraînement immobile.
+// (Le lobby et le tournoi arrivent à l'étape suivante.)
 // =============================================================================
 const fs = require('fs');
 const os = require('os');
@@ -16,7 +21,9 @@ const express = require('express');
 const { WebSocketServer } = require('ws');
 
 const C = require('./game/constants');
+const { PERSOS } = require('./game/characters');
 const physics = require('./game/physics');
+const combat = require('./game/combat');
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOTE = '0.0.0.0'; // écoute sur toutes les cartes réseau (accès depuis le LAN)
@@ -28,7 +35,7 @@ const HOTE = '0.0.0.0'; // écoute sur toutes les cartes réseau (accès depuis 
 // mouvements avec exactement le même code que le serveur, on injecte dans la
 // page les fichiers partagés de game/ à la place du marqueur <!--NB_PARTAGE-->.
 // Ainsi il n'y a aucune duplication de code et toujours une seule page servie.
-const FICHIERS_PARTAGES = ['constants.js', 'physics.js'];
+const FICHIERS_PARTAGES = ['constants.js', 'characters.js', 'physics.js'];
 
 function construirePage() {
   const page = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
@@ -38,7 +45,7 @@ function construirePage() {
       return `<script>\n// ---- game/${nom} (injecté par le serveur) ----\n${code}\n</script>`;
     })
     .join('\n');
-  return page.replace('<!--NB_PARTAGE-->', scripts);
+  return page.replace('<!--NB_PARTAGE-->', () => scripts);
 }
 
 const app = express();
@@ -56,26 +63,65 @@ const wss = new WebSocketServer({ server: serveurHttp });
 // -----------------------------------------------------------------------------
 // Joueurs
 // -----------------------------------------------------------------------------
-const COULEURS = ['#00e5ff', '#ff2bd6', '#ffb300', '#6bff4a', '#b388ff', '#ff5252'];
-const joueurs = new Map(); // id -> joueur
+const COULEURS = ['#00e5ff', '#ff2bd6', '#ffb300', '#6bff4a', '#b388ff', '#ff5252', '#40ffc8', '#ff8a3d'];
+const LISTE_PERSOS = Object.keys(PERSOS);
+const joueurs = new Map(); // id -> joueur (humains et mannequin)
 let prochainId = 1;
+let mannequin = null;
+
+const CENTRE_X = (C.BLOC.x0 + C.BLOC.x1) / 2;
+
+/** Point d'apparition : alternativement à gauche et à droite du centre. */
+function xApparition(joueur) {
+  return CENTRE_X + (joueur.id % 2 === 1 ? -200 : 200);
+}
+
+function couleurLibre() {
+  const prises = new Set([...joueurs.values()].map((j) => j.couleur));
+  return COULEURS.find((c) => !prises.has(c)) || COULEURS[0];
+}
 
 function creerJoueur(socket) {
   const id = prochainId++;
   const joueur = {
     id,
-    socket,
+    socket,                 // null pour le mannequin
     nom: `Joueur ${id}`,
-    couleur: COULEURS[(id - 1) % COULEURS.length],
-    // Position de départ : répartie sur la largeur de l'arène.
-    x: 200 + ((id - 1) % 5) * 220,
-    y: C.HAUTEUR / 2,
-    touches: 0,        // dernières touches appliquées
-    file: [],          // inputs reçus, pas encore simulés
-    acquitte: 0,       // numéro du dernier input simulé (renvoyé au client)
+    couleur: couleurLibre(),
+    perso: LISTE_PERSOS[(id - 1) % LISTE_PERSOS.length],
+    degats: 0,
+    vies: C.VIES,
+    touches: 0,             // dernières touches appliquées
+    file: [],               // inputs reçus, pas encore simulés
+    acquitte: 0,            // numéro du dernier input simulé (renvoyé au client)
+    retour: 0,              // compte à rebours avant réapparition
+    ...physics.nouvelEtat(0, 0),
   };
+  combat.reapparaitre(joueur, xApparition(joueur));
+  joueur.invul = 60;
   joueurs.set(id, joueur);
   return joueur;
+}
+
+/** Le mannequin se tient au sol, au milieu de l'arène. */
+function placerMannequin() {
+  combat.reapparaitre(mannequin, CENTRE_X + 120, C.SOL_Y - 1);
+  mannequin.dir = -1;
+}
+
+/** Un joueur seul a droit à un mannequin d'entraînement ; à deux ou plus, il s'en va. */
+function ajusterMannequin() {
+  const humains = [...joueurs.values()].filter((j) => j.socket).length;
+  if (humains === 1 && !mannequin) {
+    mannequin = creerJoueur(null);
+    mannequin.nom = 'Mannequin';
+    mannequin.couleur = '#9aa4c7';
+    mannequin.perso = 'nova';
+    placerMannequin();
+  } else if (humains !== 1 && mannequin) {
+    joueurs.delete(mannequin.id);
+    mannequin = null;
+  }
 }
 
 function envoyer(socket, message) {
@@ -84,7 +130,8 @@ function envoyer(socket, message) {
 
 wss.on('connection', (socket) => {
   const joueur = creerJoueur(socket);
-  console.log(`[+] ${joueur.nom} connecté (${joueurs.size} en ligne)`);
+  ajusterMannequin();
+  console.log(`[+] ${joueur.nom} connecté`);
   envoyer(socket, { t: 'bienvenue', id: joueur.id });
 
   socket.on('message', (donnees) => {
@@ -97,14 +144,17 @@ wss.on('connection', (socket) => {
     // Le client n'envoie QUE ses touches ; il ne peut pas imposer sa position.
     if (msg.t === 'input' && Number.isInteger(msg.seq) && Number.isInteger(msg.touches)) {
       if (joueur.file.length < 120) {
-        joueur.file.push({ seq: msg.seq, touches: msg.touches & 15 });
+        joueur.file.push({ seq: msg.seq, touches: msg.touches & C.MASQUE_TOUCHES });
       }
+    } else if (msg.t === 'perso' && LISTE_PERSOS.includes(msg.perso)) {
+      joueur.perso = msg.perso;
     }
   });
 
   socket.on('close', () => {
     joueurs.delete(joueur.id);
-    console.log(`[-] ${joueur.nom} déconnecté (${joueurs.size} en ligne)`);
+    ajusterMannequin();
+    console.log(`[-] ${joueur.nom} déconnecté`);
   });
 
   socket.on('error', () => {});
@@ -114,6 +164,7 @@ wss.on('connection', (socket) => {
 // Boucle de jeu à pas fixe
 // -----------------------------------------------------------------------------
 let tick = 0;
+let evenements = []; // coups, éjections… accumulés jusqu'au prochain envoi
 
 function consommerInput(joueur) {
   const input = joueur.file.shift();
@@ -124,7 +175,10 @@ function consommerInput(joueur) {
 
 function avancerSimulation() {
   tick++;
-  for (const joueur of joueurs.values()) {
+  const liste = [...joueurs.values()];
+
+  // 1. Chaque joueur avance selon ses touches.
+  for (const joueur of liste) {
     consommerInput(joueur);
     physics.avancerJoueur(joueur, joueur.touches);
     // Si le réseau a livré un paquet d'inputs en retard, on rattrape
@@ -134,25 +188,43 @@ function avancerSimulation() {
       physics.avancerJoueur(joueur, joueur.touches);
     }
   }
+
+  // 2. Les coups, puis les sorties d'écran.
+  combat.resoudreCoups(liste, evenements);
+  const prets = combat.gererSorties(liste, evenements);
+
+  // 3. Arène libre : tout le monde revient, avec 3 vies neuves si besoin.
+  for (const joueur of prets) {
+    if (joueur.vies <= 0) joueur.vies = C.VIES;
+    if (joueur === mannequin) placerMannequin();
+    else combat.reapparaitre(joueur, xApparition(joueur));
+  }
+
   if (tick % C.ETAT_TOUS_LES === 0) diffuserEtat();
 }
+
+const arrondi = (n) => Math.round(n * 100) / 100;
 
 function diffuserEtat() {
   const etat = {
     t: 'etat',
     tick,
-    joueurs: [...joueurs.values()].map((j) => ({
-      id: j.id,
-      nom: j.nom,
-      couleur: j.couleur,
-      x: j.x,
-      y: j.y,
-      acq: j.acquitte,
-    })),
+    ev: evenements,
+    joueurs: [...joueurs.values()].map((j) => {
+      const s = {
+        id: j.id, nom: j.nom, couleur: j.couleur, perso: j.perso,
+        degats: Math.round(j.degats), vies: j.vies, acq: j.acquitte,
+      };
+      for (const champ of physics.CHAMPS) {
+        s[champ] = typeof j[champ] === 'number' ? arrondi(j[champ]) : j[champ];
+      }
+      return s;
+    }),
   };
+  evenements = [];
   const texte = JSON.stringify(etat);
   for (const joueur of joueurs.values()) {
-    if (joueur.socket.readyState === joueur.socket.OPEN) joueur.socket.send(texte);
+    if (joueur.socket && joueur.socket.readyState === joueur.socket.OPEN) joueur.socket.send(texte);
   }
 }
 

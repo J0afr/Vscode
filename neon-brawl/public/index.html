@@ -38,23 +38,26 @@
   #bandeau b { color: #00e5ff; }
   #touches {
     position: fixed;
-    bottom: 10px;
-    left: 0;
-    right: 0;
-    text-align: center;
-    font-size: 13px;
-    opacity: 0.75;
+    top: 8px;
+    right: 14px;
+    text-align: right;
+    font-size: 12px;
+    line-height: 1.9;
+    opacity: 0.8;
     pointer-events: none;
   }
+  #touches span { margin-left: 12px; white-space: nowrap; }
   kbd {
     display: inline-block;
-    min-width: 1.2em;
-    padding: 1px 6px;
+    min-width: 1.1em;
+    padding: 0 5px;
     border: 1px solid #3b4a8a;
     border-radius: 4px;
     background: #10142b;
     color: #fff;
     font-family: inherit;
+    font-size: 11px;
+    text-align: center;
   }
 </style>
 </head>
@@ -62,31 +65,48 @@
 <div id="scene"><canvas id="jeu" width="1280" height="720"></canvas></div>
 <div id="bandeau"><b>NEON BRAWL</b> · <span id="statut">connexion…</span></div>
 <div id="touches">
-  Déplacement : <kbd>←</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>→</kbd> ou <kbd>Z</kbd> <kbd>Q</kbd> <kbd>S</kbd> <kbd>D</kbd>
+  <div>
+    <span>Bouger <kbd>←</kbd><kbd>→</kbd> / <kbd>Q</kbd><kbd>D</kbd></span>
+    <span>Sauter <kbd>↑</kbd> / <kbd>Z</kbd> / <kbd>Espace</kbd></span>
+    <span>Descendre <kbd>↓</kbd> / <kbd>S</kbd></span>
+  </div>
+  <div>
+    <span>Attaque légère <kbd>J</kbd> / <kbd>C</kbd></span>
+    <span>Attaque forte (maintenir) <kbd>K</kbd> / <kbd>V</kbd></span>
+    <span>Bouclier <kbd>L</kbd> / <kbd>B</kbd></span>
+    <span>Esquive <kbd>Maj</kbd> / <kbd>N</kbd></span>
+  </div>
+  <div>
+    <span>Personnage : <kbd>1</kbd> Zip · <kbd>2</kbd> Nova · <kbd>3</kbd> Brok</span>
+  </div>
 </div>
 
-<!-- Le serveur remplace ce marqueur par le code partagé (game/constants.js, game/physics.js). -->
+<!-- Le serveur remplace ce marqueur par le code partagé (dossier game/). -->
 <!--NB_PARTAGE-->
 
 <script>
 // =============================================================================
-// Client de Neon Brawl — étape 1
+// Client de Neon Brawl
 //
 // Principe du réseau :
 //   - À chaque tick (60/s) on lit le clavier, on numérote cet « input », on
 //     l'envoie au serveur ET on l'applique tout de suite en local : c'est la
 //     PRÉDICTION, le joueur ne ressent aucune latence.
-//   - Quand un état arrive du serveur, on repart de la position officielle et
-//     on rejoue les inputs que le serveur n'a pas encore traités : c'est la
+//   - Quand un état arrive du serveur, on repart de l'état officiel et on
+//     rejoue les inputs que le serveur n'a pas encore traités : c'est la
 //     RÉCONCILIATION.
 //   - Les autres joueurs sont affichés ~100 ms dans le passé, en glissant
 //     entre deux états reçus : c'est l'INTERPOLATION.
+//   - Les coups, dégâts et éjections ne sont JAMAIS calculés ici : seul le
+//     serveur en décide.
 // =============================================================================
 (function () {
   'use strict';
 
   const C = NB.constants;
   const physics = NB.physics;
+  const { PERSOS, infosAttaque } = NB.persos;
+  const T = C.TOUCHE;
 
   const canvas = document.getElementById('jeu');
   const ctx = canvas.getContext('2d');
@@ -103,42 +123,135 @@
   window.addEventListener('resize', redimensionner);
   redimensionner();
 
-  // ---------------------------------------------------------------------------
-  // Clavier
-  // ---------------------------------------------------------------------------
+  // Caméra fixe : on voit l'arène avec un peu de marge autour.
+  const ZOOM = 0.8;
+  const CAM_X = C.LARGEUR / 2 - 640 * ZOOM;
+  const CAM_Y = C.HAUTEUR / 2 - 400 * ZOOM;
+
+  // ===========================================================================
+  // SONS — tout est synthétisé avec la Web Audio API, aucun fichier audio.
+  // ===========================================================================
+  let actx = null;
+  let tamponBruit = null;
+
+  /** Les navigateurs n'autorisent le son qu'après une action de l'utilisateur. */
+  function activerAudio() {
+    if (!actx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      actx = new Ctx();
+      // Une seconde de bruit blanc, réutilisée pour tous les impacts.
+      tamponBruit = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+      const donnees = tamponBruit.getChannelData(0);
+      for (let i = 0; i < donnees.length; i++) donnees[i] = Math.random() * 2 - 1;
+    }
+    if (actx.state === 'suspended') actx.resume();
+  }
+
+  /** Une note qui glisse de f0 à f1. */
+  function ton(f0, f1, duree, forme, volume) {
+    if (!actx) return;
+    const t0 = actx.currentTime;
+    const osc = actx.createOscillator();
+    const gain = actx.createGain();
+    osc.type = forme;
+    osc.frequency.setValueAtTime(f0, t0);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + duree);
+    gain.gain.setValueAtTime(volume, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + duree);
+    osc.connect(gain).connect(actx.destination);
+    osc.start(t0);
+    osc.stop(t0 + duree + 0.02);
+  }
+
+  /** Un souffle de bruit filtré, dont le filtre glisse de f0 à f1. */
+  function bruit(duree, f0, f1, volume, type) {
+    if (!actx) return;
+    const t0 = actx.currentTime;
+    const source = actx.createBufferSource();
+    source.buffer = tamponBruit;
+    source.loop = true;
+    const filtre = actx.createBiquadFilter();
+    filtre.type = type || 'lowpass';
+    filtre.frequency.setValueAtTime(f0, t0);
+    filtre.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t0 + duree);
+    const gain = actx.createGain();
+    gain.gain.setValueAtTime(volume, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + duree);
+    source.connect(filtre).connect(gain).connect(actx.destination);
+    source.start(t0, Math.random() * 0.5);
+    source.stop(t0 + duree + 0.02);
+  }
+
+  const sons = {
+    saut() { ton(300, 620, 0.12, 'square', 0.05); },
+    doubleSaut() { ton(460, 940, 0.13, 'square', 0.05); },
+    atterrissage() { bruit(0.07, 500, 120, 0.12); },
+    frappe() { bruit(0.11, 2400, 500, 0.13, 'bandpass'); },
+    coup(force) {
+      const k = Math.min(1, force / 22);
+      ton(200 - 80 * k, 45, 0.12 + 0.2 * k, 'sine', 0.3 + 0.25 * k);
+      bruit(0.06 + 0.16 * k, 3500, 300, 0.2 + 0.25 * k);
+      if (k > 0.55) ton(900, 120, 0.25, 'sawtooth', 0.1);
+    },
+    pare() { ton(1300, 900, 0.09, 'triangle', 0.16); },
+    brise() { ton(1600, 150, 0.5, 'square', 0.14); bruit(0.4, 5000, 400, 0.25); },
+    esquive() { bruit(0.14, 900, 3000, 0.08, 'bandpass'); },
+    ko() {
+      bruit(1.0, 6000, 80, 0.5);
+      ton(1000, 50, 0.9, 'sawtooth', 0.16);
+      ton(120, 30, 0.7, 'sine', 0.5);
+    },
+  };
+
+  // ===========================================================================
+  // CLAVIER
+  // ===========================================================================
   // On utilise event.code (position physique de la touche) : KeyW/KeyA/KeyS/KeyD
   // correspondent à ZQSD sur un clavier AZERTY et à WASD sur un QWERTY.
-  const T = C.TOUCHE;
   const TOUCHES = {
     ArrowLeft: T.GAUCHE, ArrowRight: T.DROITE, ArrowUp: T.HAUT, ArrowDown: T.BAS,
     KeyA: T.GAUCHE, KeyD: T.DROITE, KeyW: T.HAUT, KeyS: T.BAS,
+    Space: T.SAUT,
+    KeyJ: T.LEGER, KeyK: T.FORT, KeyL: T.BOUCLIER, ShiftLeft: T.ESQUIVE, ShiftRight: T.ESQUIVE,
+    KeyC: T.LEGER, KeyV: T.FORT, KeyB: T.BOUCLIER, KeyN: T.ESQUIVE,
   };
+  const CHOIX_PERSO = { Digit1: 'zip', Digit2: 'nova', Digit3: 'brok', Numpad1: 'zip', Numpad2: 'nova', Numpad3: 'brok' };
   const enfoncees = new Set();
+  // Touches enfoncées depuis le dernier tick : un appui très bref (enfoncé puis
+  // relâché entre deux ticks) est ainsi quand même pris en compte.
+  let appuisBrefs = 0;
 
   window.addEventListener('keydown', (e) => {
+    activerAudio();
     if (e.code in TOUCHES) {
       enfoncees.add(e.code);
-      e.preventDefault(); // empêche les flèches de faire défiler la page
+      appuisBrefs |= TOUCHES[e.code];
+      e.preventDefault(); // empêche les flèches / Espace de faire défiler la page
+    } else if (e.code in CHOIX_PERSO && !e.repeat) {
+      envoyer({ t: 'perso', perso: CHOIX_PERSO[e.code] });
     }
   });
   window.addEventListener('keyup', (e) => enfoncees.delete(e.code));
   // Si la fenêtre perd le focus, on relâche tout (sinon une touche reste « collée »).
   window.addEventListener('blur', () => enfoncees.clear());
+  window.addEventListener('pointerdown', activerAudio);
 
   function lireTouches() {
-    let masque = 0;
+    let masque = appuisBrefs;
+    appuisBrefs = 0;
     for (const code of enfoncees) masque |= TOUCHES[code];
     return masque;
   }
 
-  // ---------------------------------------------------------------------------
-  // État du client
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // ÉTAT DU CLIENT
+  // ===========================================================================
   let socket = null;
   let monId = null;
 
-  // Joueur local (prédit).
-  const moi = { x: 0, y: 0, connu: false };
+  // Joueur local (prédit) : mêmes champs que sur le serveur.
+  const moi = Object.assign(physics.nouvelEtat(0, 0), { perso: 'nova', connu: false });
   let precedent = { x: 0, y: 0 };      // position au tick précédent (lissage d'affichage)
   let enAttente = [];                   // inputs envoyés, pas encore acquittés
   let seq = 0;                          // numéro du prochain input
@@ -148,9 +261,20 @@
   const DELAI_INTERPOLATION_MS = 100;
   let historique = [];                  // [{ temps, joueurs: Map(id -> joueur) }]
 
-  // ---------------------------------------------------------------------------
-  // Réseau
-  // ---------------------------------------------------------------------------
+  // Effets visuels.
+  let particules = [];
+  let ondes = [];                       // anneaux qui s'élargissent
+  let rayons = [];                      // faisceaux d'éjection
+  let secousse = 0;                     // amplitude du tremblement d'écran
+  let flash = 0;                        // éclair blanc plein écran
+
+  // ===========================================================================
+  // RÉSEAU
+  // ===========================================================================
+  function envoyer(message) {
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+  }
+
   function connecter() {
     elStatut.textContent = 'connexion…';
     socket = new WebSocket('ws://' + location.host);
@@ -177,47 +301,136 @@
   function recevoirEtat(etat) {
     const carte = new Map();
     for (const j of etat.joueurs) carte.set(j.id, j);
+
+    // Sons et petits effets déduits du changement d'état de chaque joueur.
+    const ancien = historique.length ? historique[historique.length - 1].joueurs : null;
+    if (ancien) {
+      for (const j of etat.joueurs) {
+        const avant = ancien.get(j.id);
+        if (avant) effetsDeTransition(avant, j);
+      }
+    }
+    for (const ev of etat.ev) jouerEvenement(ev, carte);
+
     historique.push({ temps: performance.now(), joueurs: carte });
     if (historique.length > 30) historique.shift();
 
-    elStatut.textContent = 'connecté · ' + etat.joueurs.length + ' joueur(s) en ligne';
+    const humains = etat.joueurs.filter((j) => j.nom !== 'Mannequin').length;
+    elStatut.textContent = 'arène libre · ' + humains + ' joueur(s) en ligne';
 
     // --- Réconciliation du joueur local ---
     const officiel = carte.get(monId);
     if (!officiel) return;
 
-    if (!moi.connu) {
-      // Premier état : on se place directement à la position officielle.
-      moi.x = precedent.x = officiel.x;
-      moi.y = precedent.y = officiel.y;
-      moi.connu = true;
-      return;
-    }
-
     const avantX = moi.x;
     const avantY = moi.y;
 
-    // 1. On repart de la position du serveur…
-    moi.x = officiel.x;
-    moi.y = officiel.y;
+    // 1. On repart de l'état du serveur…
+    for (const champ of physics.CHAMPS) moi[champ] = officiel[champ];
+    moi.perso = officiel.perso;
     // 2. …on oublie les inputs déjà traités…
     enAttente = enAttente.filter((input) => input.seq > officiel.acq);
     // 3. …et on rejoue ceux qui ne le sont pas encore.
     for (const input of enAttente) physics.avancerJoueur(moi, input.touches);
 
+    if (!moi.connu) {
+      moi.connu = true;
+      precedent.x = moi.x;
+      precedent.y = moi.y;
+      return;
+    }
+
     // S'il y a un écart avec ce qu'on affichait, on ne « téléporte » pas le
-    // carré : on garde l'écart de côté et on le réduit sur quelques images.
+    // personnage : on garde l'écart de côté et on le réduit sur quelques images.
     erreur.x += avantX - moi.x;
     erreur.y += avantY - moi.y;
-    if (Math.abs(erreur.x) > 150 || Math.abs(erreur.y) > 150) {
+    if (Math.abs(erreur.x) > 120 || Math.abs(erreur.y) > 120) {
       erreur.x = 0;
       erreur.y = 0;
+      precedent.x = moi.x;
+      precedent.y = moi.y;
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Tick local (60 Hz) : lecture du clavier, envoi, prédiction
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // EFFETS
+  // ===========================================================================
+  function etincelles(x, y, couleur, nombre, vitesse, angle, ouverture) {
+    for (let i = 0; i < nombre; i++) {
+      const a = angle === undefined ? Math.random() * Math.PI * 2 : angle + (Math.random() - 0.5) * ouverture;
+      const v = vitesse * (0.3 + Math.random() * 0.7);
+      const vie = 18 + Math.random() * 22;
+      particules.push({
+        x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+        vie, max: vie, couleur, taille: 2 + Math.random() * 3,
+      });
+    }
+  }
+
+  function poussiere(x, y) {
+    for (let i = 0; i < 6; i++) {
+      const vie = 12 + Math.random() * 10;
+      particules.push({
+        x: x + (Math.random() - 0.5) * 20, y,
+        vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 1.2,
+        vie, max: vie, couleur: '#8fa0d8', taille: 3,
+      });
+    }
+  }
+
+  /** Compare deux états successifs d'un joueur pour déclencher sons et poussières. */
+  function effetsDeTransition(avant, apres) {
+    if (apres.etat === 'mort') return;
+    if (apres.nAtk > avant.nAtk) sons.frappe();
+    if (avant.sol && !apres.sol && apres.vy < -5 && apres.etat !== 'sonne') {
+      sons.saut();
+      poussiere(avant.x, avant.y);
+    } else if (!avant.sol && !apres.sol && apres.sauts < avant.sauts) {
+      sons.doubleSaut();
+      ondes.push({ x: apres.x, y: apres.y, r: 6, vr: 3, vie: 12, max: 12, couleur: apres.couleur });
+    }
+    if (!avant.sol && apres.sol && avant.etat !== 'mort') {
+      sons.atterrissage();
+      poussiere(apres.x, apres.y);
+    }
+    if (apres.etat === 'esquive' && avant.etat !== 'esquive') sons.esquive();
+  }
+
+  /** Événements envoyés par le serveur : coups, parades, éjections. */
+  function jouerEvenement(ev, carte) {
+    const victime = carte.get(ev.id);
+    const couleur = victime ? victime.couleur : '#ffffff';
+
+    if (ev.t === 'coup') {
+      sons.coup(ev.f);
+      etincelles(ev.x, ev.y, '#ffffff', 6 + ev.f, 3 + ev.f * 0.5);
+      etincelles(ev.x, ev.y, couleur, 4 + ev.f * 0.6, 2 + ev.f * 0.4);
+      ondes.push({ x: ev.x, y: ev.y, r: 8, vr: 3 + ev.f * 0.3, vie: 14, max: 14, couleur: '#ffffff' });
+      // Tremblement d'écran uniquement sur les gros coups.
+      if (ev.f > 11) secousse = Math.max(secousse, Math.min(22, ev.f * 0.9));
+    } else if (ev.t === 'pare') {
+      sons.pare();
+      etincelles(ev.x, ev.y, couleur, 8, 4);
+    } else if (ev.t === 'brise') {
+      sons.brise();
+      etincelles(ev.x, ev.y, couleur, 40, 9);
+      ondes.push({ x: ev.x, y: ev.y, r: 20, vr: 7, vie: 22, max: 22, couleur });
+      secousse = Math.max(secousse, 12);
+    } else if (ev.t === 'ko') {
+      sons.ko();
+      // Explosion dirigée vers le centre de l'arène, depuis le bord de sortie.
+      const angle = Math.atan2(400 - ev.y, 640 - ev.x);
+      etincelles(ev.x, ev.y, couleur, 70, 26, angle, 0.7);
+      etincelles(ev.x, ev.y, '#ffffff', 40, 20, angle, 0.5);
+      rayons.push({ x: ev.x, y: ev.y, angle, vie: 34, max: 34, couleur });
+      secousse = 24;
+      flash = 0.55;
+    }
+  }
+
+  // ===========================================================================
+  // TICK LOCAL (60 Hz) : lecture du clavier, envoi, prédiction
+  // ===========================================================================
   function tickLocal() {
     if (!moi.connu || !socket || socket.readyState !== WebSocket.OPEN) return;
 
@@ -232,9 +445,9 @@
     if (enAttente.length > 120) enAttente.shift();
   }
 
-  // ---------------------------------------------------------------------------
-  // Interpolation des autres joueurs
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // INTERPOLATION DES AUTRES JOUEURS
+  // ===========================================================================
   function joueursInterpoles() {
     if (historique.length === 0) return [];
     const cible = performance.now() - DELAI_INTERPOLATION_MS;
@@ -255,108 +468,633 @@
     const resultat = [];
     for (const [id, jb] of b.joueurs) {
       const ja = a.joueurs.get(id) || jb;
-      resultat.push({
-        id,
-        nom: jb.nom,
-        couleur: jb.couleur,
-        x: ja.x + (jb.x - ja.x) * k,
-        y: ja.y + (jb.y - ja.y) * k,
-      });
+      // Pas de glissement entre le point d'éjection et le point de réapparition.
+      const saut = ja.etat === 'mort' || jb.etat === 'mort';
+      resultat.push(Object.assign({}, ja, {
+        x: saut ? ja.x : ja.x + (jb.x - ja.x) * k,
+        y: saut ? ja.y : ja.y + (jb.y - ja.y) * k,
+      }));
     }
     return resultat;
   }
 
-  // ---------------------------------------------------------------------------
-  // Affichage
-  // ---------------------------------------------------------------------------
-  function dessinerDecor() {
-    ctx.fillStyle = '#090b17';
-    ctx.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
+  // ===========================================================================
+  // DÉCOR — dessiné une seule fois dans une image, puis recopié à chaque frame
+  // ===========================================================================
+  const fond = document.createElement('canvas');
+  fond.width = C.LARGEUR;
+  fond.height = C.HAUTEUR;
 
-    // Grille néon discrète.
-    ctx.strokeStyle = 'rgba(60, 90, 200, 0.14)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let x = 0; x <= C.LARGEUR; x += 64) { ctx.moveTo(x, 0); ctx.lineTo(x, C.HAUTEUR); }
-    for (let y = 0; y <= C.HAUTEUR; y += 64) { ctx.moveTo(0, y); ctx.lineTo(C.LARGEUR, y); }
+  function dessinerFond() {
+    const f = fond.getContext('2d');
+
+    // Ciel.
+    const ciel = f.createLinearGradient(0, 0, 0, C.HAUTEUR);
+    ciel.addColorStop(0, '#060714');
+    ciel.addColorStop(0.6, '#0d1030');
+    ciel.addColorStop(1, '#1b0d33');
+    f.fillStyle = ciel;
+    f.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
+
+    // Étoiles (positions pseudo-aléatoires mais toujours les mêmes).
+    let graine = 7;
+    const alea = () => { graine = (graine * 16807) % 2147483647; return graine / 2147483647; };
+    for (let i = 0; i < 110; i++) {
+      f.fillStyle = 'rgba(190, 210, 255,' + (0.15 + alea() * 0.5) + ')';
+      const taille = alea() < 0.85 ? 1.2 : 2.2;
+      f.fillRect(alea() * C.LARGEUR, alea() * C.HAUTEUR * 0.8, taille, taille);
+    }
+
+    // Grille en perspective au loin.
+    f.strokeStyle = 'rgba(255, 43, 214, 0.13)';
+    f.lineWidth = 1;
+    f.beginPath();
+    for (let i = -12; i <= 12; i++) {
+      f.moveTo(640 + i * 30, 500);
+      f.lineTo(640 + i * 150, C.HAUTEUR);
+    }
+    for (let y = 500, pas = 8; y < C.HAUTEUR; y += pas, pas *= 1.35) {
+      f.moveTo(0, y);
+      f.lineTo(C.LARGEUR, y);
+    }
+    f.stroke();
+
+    // --- À partir d'ici, coordonnées du monde ---
+    f.setTransform(ZOOM, 0, 0, ZOOM, CAM_X, CAM_Y);
+
+    // Bloc principal.
+    const { x0, x1 } = C.BLOC;
+    const corps = f.createLinearGradient(0, C.SOL_Y, 0, C.SOL_Y + 340);
+    corps.addColorStop(0, '#1a2152');
+    corps.addColorStop(1, '#070817');
+    f.fillStyle = corps;
+    f.fillRect(x0, C.SOL_Y, x1 - x0, 400);
+    f.strokeStyle = 'rgba(0, 229, 255, 0.12)';
+    f.beginPath();
+    for (let x = x0 + 80; x < x1; x += 80) { f.moveTo(x, C.SOL_Y); f.lineTo(x, C.SOL_Y + 400); }
+    f.stroke();
+
+    f.shadowColor = '#00e5ff';
+    f.shadowBlur = 20;
+    f.strokeStyle = '#00e5ff';
+    f.lineWidth = 4;
+    f.beginPath();
+    f.moveTo(x0, C.SOL_Y + 400);
+    f.lineTo(x0, C.SOL_Y);
+    f.lineTo(x1, C.SOL_Y);
+    f.lineTo(x1, C.SOL_Y + 400);
+    f.stroke();
+
+    // Plateformes flottantes.
+    f.shadowColor = '#ff2bd6';
+    f.strokeStyle = '#ff2bd6';
+    f.lineWidth = 5;
+    f.lineCap = 'round';
+    for (const pl of C.PLATEFORMES) {
+      f.beginPath();
+      f.moveTo(pl.x0, pl.y + 2);
+      f.lineTo(pl.x1, pl.y + 2);
+      f.stroke();
+    }
+    f.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  dessinerFond();
+
+  // ===========================================================================
+  // PERSONNAGES — de petits combattants dessinés entièrement au trait
+  // ===========================================================================
+  const FOND_CORPS = '#0b0e20';
+
+  /** Remplit puis trace le chemin courant, avec un halo néon. */
+  function forme(couleur) {
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = FOND_CORPS;
+    ctx.fill();
+    ctx.fillStyle = couleur + '48';
+    ctx.fill();
+    ctx.shadowBlur = 12;
     ctx.stroke();
+  }
 
-    // Cadre de l'arène.
+  function melanger(a, b, k) {
+    return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+  }
+
+  function dessinerPerso(j, estMoi) {
+    const S = PERSOS[j.perso] || PERSOS.nova;
+    const l = S.l;
+    const h = S.h;
+    const e = S.taille;
+    const maintenant = performance.now();
+    const infos = (j.etat === 'attaque' || j.etat === 'charge') ? infosAttaque(j) : null;
+    const touche = j.etat === 'sonne' && j.gel > 0; // vient de prendre un coup : flash blanc
+    const couleur = touche ? '#ffffff' : j.couleur;
+
     ctx.save();
-    ctx.shadowColor = '#00e5ff';
-    ctx.shadowBlur = 18;
-    ctx.strokeStyle = '#00e5ff';
+    ctx.translate(j.x, j.y);
+
+    // Transparence : esquive, ou clignotement pendant l'invulnérabilité.
+    if (j.etat === 'esquive') ctx.globalAlpha = 0.4;
+    else if (j.invul > 0 && Math.floor(maintenant / 70) % 2) ctx.globalAlpha = 0.4;
+
+    // --- Aura de charge ---
+    if (j.etat === 'charge') {
+      const k = Math.min(1, j.charge / C.CHARGE_MAX);
+      const rayon = h * (0.55 + 0.35 * k) + Math.sin(maintenant / 40) * 3;
+      const aura = ctx.createRadialGradient(0, -h / 2, rayon * 0.3, 0, -h / 2, rayon);
+      aura.addColorStop(0, 'rgba(255,255,255,0)');
+      aura.addColorStop(0.8, j.couleur + '55');
+      aura.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(0, -h / 2, rayon, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // --- Corps (tourné et retourné selon l'action) ---
+    ctx.save();
+    let rotation = 0;
+    if (j.etat === 'sonne') {
+      rotation = j.sol ? Math.sin(maintenant / 60) * 0.35 : (maintenant / 110) * (j.vx >= 0 ? 1 : -1);
+    } else if (j.etat === 'esquive' && j.atk === 'roulade') {
+      rotation = (j.t / 24) * Math.PI * 2 * (j.vx >= 0 ? 1 : -1);
+    } else if (j.etat === 'attaque' && j.atk === 'air_neutre' && infos) {
+      rotation = (j.t / infos.total) * Math.PI * 2 * j.dir;
+    }
+    ctx.translate(0, -h / 2);
+    ctx.rotate(rotation);
+    // Petit tassement pendant l'élan du saut ou la charge.
+    const tasse = (j.elan > 0 || j.etat === 'charge') ? 0.9 : 1;
+    ctx.scale(j.dir, tasse);
+    ctx.translate(0, h / 2 / tasse);
+
     ctx.lineWidth = 3;
-    ctx.strokeRect(2, 2, C.LARGEUR - 4, C.HAUTEUR - 4);
-    ctx.restore();
-  }
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = couleur;
+    ctx.shadowColor = couleur;
 
-  function dessinerJoueur(joueur, estMoi) {
-    const taille = C.TAILLE_JOUEUR;
-    ctx.save();
-    ctx.translate(joueur.x, joueur.y);
+    const rTete = l * 0.52;
+    const yTete = -h + rTete;
+    const yHautCorps = yTete + rTete * 0.75;
+    const yHanche = -h * 0.2;
+    const largeurCorps = l * (j.perso === 'brok' ? 0.8 : 0.6);
+    const enMarche = j.sol && Math.abs(j.vx) > 0.5;
+    const pas = enMarche ? Math.sin(j.x * 0.14) : 0;
 
-    // Carré néon : contour lumineux + intérieur translucide.
-    ctx.shadowColor = joueur.couleur;
-    ctx.shadowBlur = 22;
-    ctx.fillStyle = joueur.couleur + '33';
-    ctx.strokeStyle = joueur.couleur;
-    ctx.lineWidth = 4;
-    ctx.fillRect(-taille / 2, -taille / 2, taille, taille);
-    ctx.strokeRect(-taille / 2, -taille / 2, taille, taille);
+    // -- Position des mains --
+    const rMain = l * (j.perso === 'brok' ? 0.24 : 0.16);
+    const reposAvant = [l * 0.46, -h * 0.42 - pas * 4];
+    const reposArriere = [-l * 0.46, -h * 0.42 + pas * 4];
+    let mainAvant = reposAvant;
+    let mainArriere = reposArriere;
 
-    // Nom au-dessus.
-    ctx.shadowBlur = 6;
-    ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 16px "Trebuchet MS", sans-serif';
+    if (j.etat === 'charge') {
+      mainAvant = [-l * 0.3 + (Math.random() - 0.5) * 3, -h * 0.5 + (Math.random() - 0.5) * 3];
+    } else if (j.etat === 'bouclier') {
+      mainAvant = [l * 0.5, -h * 0.6];
+      mainArriere = [l * 0.2, -h * 0.5];
+    } else if (j.etat === 'attaque' && infos) {
+      const boites = infos.attaque.boites;
+      const position = (repos, boite) => {
+        const cible = [boite[0] * e, boite[1] * e];
+        if (j.t <= infos.debut) {
+          // Armement : la main recule un peu avant de frapper.
+          return melanger(repos, cible, -0.3 * (j.t / infos.debut));
+        }
+        if (j.t <= infos.fin) return cible;
+        return melanger(cible, repos, (j.t - infos.fin) / (infos.total - infos.fin));
+      };
+      mainAvant = position(reposAvant, boites[0]);
+      if (boites[1]) mainArriere = position(reposArriere, boites[1]);
+    }
+
+    const dessinerMain = (pos) => {
+      ctx.beginPath();
+      ctx.arc(pos[0], pos[1], rMain, 0, Math.PI * 2);
+      forme(couleur);
+    };
+
+    dessinerMain(mainArriere);
+
+    // -- Jambes --
+    const yPied = j.sol ? 0 : -h * 0.07;
+    const ecart = l * 0.16;
+    const balancement = j.sol ? pas * l * 0.32 : -l * 0.12;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(-ecart, yHanche); ctx.lineTo(-ecart + balancement, yPied - 3);
+    ctx.moveTo(ecart, yHanche); ctx.lineTo(ecart - balancement, yPied - 3);
+    ctx.stroke();
+    for (const px of [-ecart + balancement, ecart - balancement]) {
+      ctx.beginPath();
+      ctx.ellipse(px + l * 0.06, yPied - 3, l * 0.15, 3.5, 0, 0, Math.PI * 2);
+      forme(couleur);
+    }
+
+    // -- Écharpe de Zip (derrière le corps) --
+    if (j.perso === 'zip') {
+      const vent = Math.min(18, Math.abs(j.vx) * 2.5);
+      ctx.save();
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(-l * 0.15, yHautCorps + 3);
+      ctx.quadraticCurveTo(
+        -l * 0.7, yHautCorps - 4 + Math.sin(maintenant / 90) * 5,
+        -l * 0.95 - vent, yHautCorps + 6 + Math.sin(maintenant / 70) * 6
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // -- Tronc --
+    ctx.beginPath();
+    if (j.perso === 'nova') {
+      // Nova : une petite robe en trapèze.
+      ctx.moveTo(-largeurCorps * 0.35, yHautCorps);
+      ctx.lineTo(largeurCorps * 0.35, yHautCorps);
+      ctx.lineTo(largeurCorps * 0.75, yHanche + 2);
+      ctx.lineTo(-largeurCorps * 0.75, yHanche + 2);
+      ctx.closePath();
+    } else {
+      ctx.roundRect(-largeurCorps / 2, yHautCorps, largeurCorps, yHanche - yHautCorps + 3, 6);
+    }
+    forme(couleur);
+
+    // -- Attributs derrière la tête --
+    if (j.perso === 'zip') {
+      // Oreilles pointues.
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * rTete * 0.85, yTete - rTete * 0.35);
+        ctx.lineTo(s * rTete * 0.75, yTete - rTete * 1.6);
+        ctx.lineTo(s * rTete * 0.15, yTete - rTete * 0.85);
+        ctx.closePath();
+        forme(couleur);
+      }
+    } else if (j.perso === 'brok') {
+      // Cornes.
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * rTete * 0.55, yTete - rTete * 0.75);
+        ctx.quadraticCurveTo(s * rTete * 1.5, yTete - rTete * 0.9, s * rTete * 1.25, yTete - rTete * 1.7);
+        ctx.quadraticCurveTo(s * rTete * 0.95, yTete - rTete * 1.0, s * rTete * 0.9, yTete - rTete * 0.3);
+        ctx.closePath();
+        forme(couleur);
+      }
+    } else {
+      // Nova : antenne avec une boule lumineuse.
+      const bx = rTete * 0.35 + Math.sin(maintenant / 200) * 2;
+      const by = yTete - rTete * 1.65;
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.moveTo(0, yTete - rTete);
+      ctx.quadraticCurveTo(0, by, bx, by);
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.arc(bx, by, 4.5 + Math.sin(maintenant / 150) * 1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // -- Tête --
+    ctx.beginPath();
+    if (j.perso === 'brok') ctx.roundRect(-rTete, yTete - rTete * 0.9, rTete * 2, rTete * 1.8, rTete * 0.55);
+    else ctx.arc(0, yTete, rTete, 0, Math.PI * 2);
+    forme(couleur);
+
+    // -- Yeux --
+    const xYeux = rTete * 0.28;
+    const ecartYeux = rTete * 0.3;
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 8;
+    if (j.etat === 'sonne') {
+      // Yeux en croix quand on est sonné.
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      for (const ox of [xYeux - ecartYeux, xYeux + ecartYeux]) {
+        ctx.moveTo(ox - 4, yTete - 4); ctx.lineTo(ox + 4, yTete + 4);
+        ctx.moveTo(ox + 4, yTete - 4); ctx.lineTo(ox - 4, yTete + 4);
+      }
+      ctx.stroke();
+    } else {
+      const concentre = j.etat === 'attaque' || j.etat === 'charge' || j.etat === 'bouclier';
+      ctx.fillStyle = '#ffffff';
+      for (const ox of [xYeux - ecartYeux, xYeux + ecartYeux]) {
+        ctx.beginPath();
+        ctx.ellipse(ox, yTete, rTete * 0.14, rTete * (concentre ? 0.15 : 0.27), 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (j.perso === 'brok') {
+        // Sourcils froncés.
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(xYeux - ecartYeux - 6, yTete - rTete * 0.5);
+        ctx.lineTo(xYeux + ecartYeux + 6, yTete - rTete * 0.28);
+        ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = couleur;
+    ctx.shadowColor = couleur;
+    ctx.lineWidth = 3;
+
+    dessinerMain(mainAvant);
+    ctx.restore(); // fin du corps tourné
+
+    // --- Traînée lumineuse du coup, pendant qu'il est actif ---
+    if (j.etat === 'attaque' && infos && j.t > infos.debut && j.t <= infos.fin + 2) {
+      const k = Math.max(0, 1 - (j.t - infos.debut) / (infos.fin - infos.debut + 2));
+      for (const [bx, by, rayon] of infos.attaque.boites) {
+        const cx = bx * e * j.dir;
+        const cy = by * e;
+        const r = rayon * e;
+        const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        halo.addColorStop(0, 'rgba(255,255,255,' + (0.75 * k) + ')');
+        halo.addColorStop(0.5, j.couleur + '88');
+        halo.addColorStop(1, j.couleur + '00');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // --- Bulle du bouclier (rétrécit quand le bouclier s'use) ---
+    if (j.etat === 'bouclier') {
+      const r = h * 0.72 * (0.45 + 0.55 * Math.max(0, j.bouclier) / C.BOUCLIER_MAX);
+      ctx.shadowColor = j.couleur;
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = j.couleur + '33';
+      ctx.strokeStyle = j.couleur;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, -h / 2, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // --- Nom au-dessus de la tête ---
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = '#000000';
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = estMoi ? '#ffffff' : '#c3cdf5';
+    ctx.font = 'bold 15px "Trebuchet MS", sans-serif';
     ctx.textAlign = 'center';
-    ctx.fillText(joueur.nom + (estMoi ? ' (toi)' : ''), 0, -taille / 2 - 12);
+    ctx.fillText(j.nom, 0, -h - rTete * 0.9 - 14);
+    if (estMoi) {
+      // Petit triangle pour repérer son propre personnage.
+      ctx.fillStyle = j.couleur;
+      ctx.beginPath();
+      ctx.moveTo(-7, -h - rTete * 0.9 - 9);
+      ctx.lineTo(7, -h - rTete * 0.9 - 9);
+      ctx.lineTo(0, -h - rTete * 0.9);
+      ctx.fill();
+    }
     ctx.restore();
   }
 
-  // ---------------------------------------------------------------------------
-  // Boucle principale
-  // ---------------------------------------------------------------------------
+  // ===========================================================================
+  // EFFETS : mise à jour et dessin
+  // ===========================================================================
+  function dessinerEffets(dt) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Faisceaux d'éjection.
+    for (const r of rayons) {
+      r.vie -= dt;
+      const k = Math.max(0, r.vie / r.max);
+      ctx.save();
+      ctx.translate(r.x, r.y);
+      ctx.rotate(r.angle);
+      const longueur = 1500;
+      const largeur = 90 * k;
+      const degrade = ctx.createLinearGradient(0, 0, longueur, 0);
+      degrade.addColorStop(0, '#ffffff');
+      degrade.addColorStop(0.15, r.couleur);
+      degrade.addColorStop(1, r.couleur + '00');
+      ctx.globalAlpha = k;
+      ctx.fillStyle = degrade;
+      ctx.beginPath();
+      ctx.moveTo(-40, -largeur);
+      ctx.lineTo(longueur, -largeur * 0.15);
+      ctx.lineTo(longueur, largeur * 0.15);
+      ctx.lineTo(-40, largeur);
+      ctx.fill();
+      ctx.restore();
+    }
+    rayons = rayons.filter((r) => r.vie > 0);
+
+    // Anneaux.
+    for (const o of ondes) {
+      o.vie -= dt;
+      o.r += o.vr * dt;
+      ctx.globalAlpha = Math.max(0, o.vie / o.max);
+      ctx.strokeStyle = o.couleur;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ondes = ondes.filter((o) => o.vie > 0);
+
+    // Particules.
+    for (const p of particules) {
+      p.vie -= dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.94;
+      p.vy = p.vy * 0.94 + 0.12 * dt;
+      const k = Math.max(0, p.vie / p.max);
+      ctx.globalAlpha = k;
+      ctx.fillStyle = p.couleur;
+      ctx.fillRect(p.x - p.taille / 2, p.y - p.taille / 2, p.taille * (0.5 + k), p.taille * (0.5 + k));
+    }
+    particules = particules.filter((p) => p.vie > 0);
+    if (particules.length > 700) particules.splice(0, particules.length - 700);
+
+    ctx.restore();
+  }
+
+  // ===========================================================================
+  // INTERFACE : pourcentages et vies
+  // ===========================================================================
+  function couleurDegats(degats) {
+    // Blanc -> jaune -> rouge sombre à mesure que les dégâts montent.
+    const k = Math.min(1, degats / 150);
+    const teinte = 55 - 55 * k;
+    const lum = 95 - 45 * Math.min(1, degats / 60) - 12 * k;
+    return 'hsl(' + teinte + ', 100%, ' + lum + '%)';
+  }
+
+  function dessinerInterface(joueurs) {
+    const n = joueurs.length;
+    if (n === 0) return;
+    const largeur = Math.min(210, (C.LARGEUR - 40) / n);
+    const depart = (C.LARGEUR - largeur * n) / 2;
+
+    joueurs.forEach((j, i) => {
+      const x = depart + i * largeur + largeur / 2;
+      const y = C.HAUTEUR - 22;
+      ctx.save();
+      ctx.textAlign = 'center';
+
+      // Fond du panneau.
+      ctx.fillStyle = 'rgba(6, 8, 22, 0.72)';
+      ctx.strokeStyle = j.couleur;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = j.couleur;
+      ctx.shadowBlur = j.id === monId ? 16 : 6;
+      ctx.beginPath();
+      ctx.roundRect(x - largeur / 2 + 8, y - 66, largeur - 16, 78, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      // Pourcentage.
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 4;
+      ctx.font = 'bold 36px "Trebuchet MS", sans-serif';
+      ctx.fillStyle = couleurDegats(j.degats);
+      ctx.fillText(j.degats + '%', x, y - 24);
+
+      // Nom et personnage.
+      ctx.font = 'bold 12px "Trebuchet MS", sans-serif';
+      ctx.fillStyle = '#c3cdf5';
+      const perso = PERSOS[j.perso] ? PERSOS[j.perso].nom : '';
+      ctx.fillText(j.nom + ' · ' + perso, x, y - 6);
+
+      // Vies.
+      ctx.shadowColor = j.couleur;
+      ctx.shadowBlur = 8;
+      for (let v = 0; v < C.VIES; v++) {
+        ctx.beginPath();
+        ctx.arc(x + (v - (C.VIES - 1) / 2) * 16, y + 4, 4.5, 0, Math.PI * 2);
+        if (v < j.vies) { ctx.fillStyle = j.couleur; ctx.fill(); }
+        else { ctx.strokeStyle = j.couleur + '66'; ctx.lineWidth = 1.5; ctx.stroke(); }
+      }
+      ctx.restore();
+    });
+  }
+
+  /** Repère au bord de l'écran pour un joueur sorti du champ mais pas encore éjecté. */
+  function dessinerHorsChamp(j) {
+    const sx = j.x * ZOOM + CAM_X;
+    const sy = (j.y - 30) * ZOOM + CAM_Y;
+    if (sx > 0 && sx < C.LARGEUR && sy > 0 && sy < C.HAUTEUR) return;
+    const bx = Math.max(26, Math.min(C.LARGEUR - 26, sx));
+    const by = Math.max(26, Math.min(C.HAUTEUR - 110, sy));
+    ctx.save();
+    ctx.shadowColor = j.couleur;
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = j.couleur;
+    ctx.fillStyle = 'rgba(6, 8, 22, 0.8)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(bx, by, 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = j.couleur;
+    ctx.font = 'bold 14px "Trebuchet MS", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('!', bx, by + 5);
+    ctx.restore();
+  }
+
+  // ===========================================================================
+  // BOUCLE PRINCIPALE
+  // ===========================================================================
   const DUREE_TICK_MS = 1000 / C.TICK_HZ;
   let dernierTemps = performance.now();
   let accumulateur = 0;
 
   function boucle(maintenant) {
-    accumulateur += Math.min(250, maintenant - dernierTemps);
+    const ecoule = Math.min(250, maintenant - dernierTemps);
     dernierTemps = maintenant;
+    accumulateur += ecoule;
     while (accumulateur >= DUREE_TICK_MS) {
       tickLocal();
       accumulateur -= DUREE_TICK_MS;
     }
-    // Fraction du tick en cours : permet un affichage fluide même sur un écran
-    // à plus de 60 Hz.
+    // Fraction du tick en cours : affichage fluide même sur un écran > 60 Hz.
     const alpha = accumulateur / DUREE_TICK_MS;
+    const dt = ecoule / DUREE_TICK_MS; // durée de la frame, en ticks
 
     // L'écart de correction fond progressivement.
     erreur.x *= 0.85;
     erreur.y *= 0.85;
 
-    dessinerDecor();
-
-    let moiDistant = null;
-    for (const joueur of joueursInterpoles()) {
-      if (joueur.id === monId) { moiDistant = joueur; continue; }
-      dessinerJoueur(joueur, false);
+    // --- Liste des joueurs à afficher ---
+    const joueurs = joueursInterpoles();
+    for (const j of joueurs) {
+      if (j.id === monId && moi.connu) {
+        // Le joueur local est affiché à sa position PRÉDITE, pas à celle du passé.
+        for (const champ of physics.CHAMPS) j[champ] = moi[champ];
+        if (moi.gel === 0) {
+          j.x = precedent.x + (moi.x - precedent.x) * alpha + erreur.x;
+          j.y = precedent.y + (moi.y - precedent.y) * alpha + erreur.y;
+        }
+      }
     }
-    if (moi.connu && moiDistant) {
-      dessinerJoueur({
-        nom: moiDistant.nom,
-        couleur: moiDistant.couleur,
-        x: precedent.x + (moi.x - precedent.x) * alpha + erreur.x,
-        y: precedent.y + (moi.y - precedent.y) * alpha + erreur.y,
-      }, true);
+
+    // --- Tremblement d'écran ---
+    let dx = 0;
+    let dy = 0;
+    if (secousse > 0.3) {
+      dx = (Math.random() - 0.5) * 2 * secousse;
+      dy = (Math.random() - 0.5) * 2 * secousse;
+      secousse *= Math.pow(0.88, dt);
+    } else {
+      secousse = 0;
+    }
+
+    // --- Dessin ---
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#05060d';
+    ctx.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
+    ctx.drawImage(fond, dx, dy);
+
+    ctx.setTransform(ZOOM, 0, 0, ZOOM, CAM_X + dx, CAM_Y + dy);
+    const vivants = joueurs.filter((j) => j.etat !== 'mort');
+    for (const j of vivants) {
+      // Traînée derrière un joueur éjecté à grande vitesse.
+      if (j.etat === 'sonne' && Math.hypot(j.vx, j.vy) > 8) {
+        const S = PERSOS[j.perso] || PERSOS.nova;
+        const vie = 16;
+        particules.push({
+          x: j.x + (Math.random() - 0.5) * 14, y: j.y - S.h / 2 + (Math.random() - 0.5) * 14,
+          vx: 0, vy: 0, vie, max: vie, couleur: j.couleur, taille: 7,
+        });
+      }
+    }
+    // Le joueur local est dessiné en dernier, par-dessus les autres.
+    for (const j of vivants) if (j.id !== monId) dessinerPerso(j, false);
+    for (const j of vivants) if (j.id === monId) dessinerPerso(j, true);
+    dessinerEffets(dt);
+
+    // --- Interface (coordonnées écran) ---
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    for (const j of vivants) dessinerHorsChamp(j);
+    dessinerInterface(joueurs);
+    if (flash > 0.01) {
+      ctx.fillStyle = 'rgba(255,255,255,' + flash + ')';
+      ctx.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
+      flash *= Math.pow(0.85, dt);
     }
 
     requestAnimationFrame(boucle);
   }
 
   // Petit accès pour les tests automatiques (lecture seule).
-  window.__nb = { moi, etatDistant: () => joueursInterpoles() };
+  window.__nb = {
+    moi,
+    etat: () => (historique.length ? [...historique[historique.length - 1].joueurs.values()] : []),
+  };
 
   connecter();
   requestAnimationFrame(boucle);
