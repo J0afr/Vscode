@@ -1,0 +1,14 @@
+{
+  "name": "neon-brawl",
+  "version": "0.1.0",
+  "description": "Jeu de combat de plateforme multijoueur en réseau local",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.21.0",
+    "ws": "^8.18.0"
+  }
+}

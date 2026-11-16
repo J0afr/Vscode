@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neon Brawl</title>
+<style>
+  /* Aucune ressource externe : tout est dans ce fichier (pas de CDN). */
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #05060d;
+    color: #cfd8ff;
+    font-family: "Trebuchet MS", "Segoe UI", Verdana, sans-serif;
+    overflow: hidden;
+  }
+  #scene {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: #090b17;
+    box-shadow: 0 0 40px rgba(0, 229, 255, 0.25);
+  }
+  #bandeau {
+    position: fixed;
+    top: 10px;
+    left: 14px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    text-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+    pointer-events: none;
+  }
+  #bandeau b { color: #00e5ff; }
+  #touches {
+    position: fixed;
+    bottom: 10px;
+    left: 0;
+    right: 0;
+    text-align: center;
+    font-size: 13px;
+    opacity: 0.75;
+    pointer-events: none;
+  }
+  kbd {
+    display: inline-block;
+    min-width: 1.2em;
+    padding: 1px 6px;
+    border: 1px solid #3b4a8a;
+    border-radius: 4px;
+    background: #10142b;
+    color: #fff;
+    font-family: inherit;
+  }
+</style>
+</head>
+<body>
+<div id="scene"><canvas id="jeu" width="1280" height="720"></canvas></div>
+<div id="bandeau"><b>NEON BRAWL</b> · <span id="statut">connexion…</span></div>
+<div id="touches">
+  Déplacement : <kbd>←</kbd> <kbd>↑</kbd> <kbd>↓</kbd> <kbd>→</kbd> ou <kbd>Z</kbd> <kbd>Q</kbd> <kbd>S</kbd> <kbd>D</kbd>
+</div>
+
+<!-- Le serveur remplace ce marqueur par le code partagé (game/constants.js, game/physics.js). -->
+<!--NB_PARTAGE-->
+
+<script>
+// =============================================================================
+// Client de Neon Brawl — étape 1
+//
+// Principe du réseau :
+//   - À chaque tick (60/s) on lit le clavier, on numérote cet « input », on
+//     l'envoie au serveur ET on l'applique tout de suite en local : c'est la
+//     PRÉDICTION, le joueur ne ressent aucune latence.
+//   - Quand un état arrive du serveur, on repart de la position officielle et
+//     on rejoue les inputs que le serveur n'a pas encore traités : c'est la
+//     RÉCONCILIATION.
+//   - Les autres joueurs sont affichés ~100 ms dans le passé, en glissant
+//     entre deux états reçus : c'est l'INTERPOLATION.
+// =============================================================================
+(function () {
+  'use strict';
+
+  const C = NB.constants;
+  const physics = NB.physics;
+
+  const canvas = document.getElementById('jeu');
+  const ctx = canvas.getContext('2d');
+  const elStatut = document.getElementById('statut');
+
+  // ---------------------------------------------------------------------------
+  // Mise à l'échelle : le jeu est dessiné en 1280x720 et étiré à la fenêtre.
+  // ---------------------------------------------------------------------------
+  function redimensionner() {
+    const echelle = Math.min(window.innerWidth / C.LARGEUR, window.innerHeight / C.HAUTEUR);
+    canvas.style.width = Math.floor(C.LARGEUR * echelle) + 'px';
+    canvas.style.height = Math.floor(C.HAUTEUR * echelle) + 'px';
+  }
+  window.addEventListener('resize', redimensionner);
+  redimensionner();
+
+  // ---------------------------------------------------------------------------
+  // Clavier
+  // ---------------------------------------------------------------------------
+  // On utilise event.code (position physique de la touche) : KeyW/KeyA/KeyS/KeyD
+  // correspondent à ZQSD sur un clavier AZERTY et à WASD sur un QWERTY.
+  const T = C.TOUCHE;
+  const TOUCHES = {
+    ArrowLeft: T.GAUCHE, ArrowRight: T.DROITE, ArrowUp: T.HAUT, ArrowDown: T.BAS,
+    KeyA: T.GAUCHE, KeyD: T.DROITE, KeyW: T.HAUT, KeyS: T.BAS,
+  };
+  const enfoncees = new Set();
+
+  window.addEventListener('keydown', (e) => {
+    if (e.code in TOUCHES) {
+      enfoncees.add(e.code);
+      e.preventDefault(); // empêche les flèches de faire défiler la page
+    }
+  });
+  window.addEventListener('keyup', (e) => enfoncees.delete(e.code));
+  // Si la fenêtre perd le focus, on relâche tout (sinon une touche reste « collée »).
+  window.addEventListener('blur', () => enfoncees.clear());
+
+  function lireTouches() {
+    let masque = 0;
+    for (const code of enfoncees) masque |= TOUCHES[code];
+    return masque;
+  }
+
+  // ---------------------------------------------------------------------------
+  // État du client
+  // ---------------------------------------------------------------------------
+  let socket = null;
+  let monId = null;
+
+  // Joueur local (prédit).
+  const moi = { x: 0, y: 0, connu: false };
+  let precedent = { x: 0, y: 0 };      // position au tick précédent (lissage d'affichage)
+  let enAttente = [];                   // inputs envoyés, pas encore acquittés
+  let seq = 0;                          // numéro du prochain input
+  const erreur = { x: 0, y: 0 };        // écart de correction, résorbé en douceur
+
+  // Derniers états reçus, pour interpoler les autres joueurs.
+  const DELAI_INTERPOLATION_MS = 100;
+  let historique = [];                  // [{ temps, joueurs: Map(id -> joueur) }]
+
+  // ---------------------------------------------------------------------------
+  // Réseau
+  // ---------------------------------------------------------------------------
+  function connecter() {
+    elStatut.textContent = 'connexion…';
+    socket = new WebSocket('ws://' + location.host);
+
+    socket.addEventListener('message', (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.t === 'bienvenue') {
+        monId = msg.id;
+        moi.connu = false;
+        enAttente = [];
+        historique = [];
+      } else if (msg.t === 'etat') {
+        recevoirEtat(msg);
+      }
+    });
+
+    socket.addEventListener('close', () => {
+      elStatut.textContent = 'déconnecté — nouvelle tentative…';
+      monId = null;
+      setTimeout(connecter, 1000);
+    });
+  }
+
+  function recevoirEtat(etat) {
+    const carte = new Map();
+    for (const j of etat.joueurs) carte.set(j.id, j);
+    historique.push({ temps: performance.now(), joueurs: carte });
+    if (historique.length > 30) historique.shift();
+
+    elStatut.textContent = 'connecté · ' + etat.joueurs.length + ' joueur(s) en ligne';
+
+    // --- Réconciliation du joueur local ---
+    const officiel = carte.get(monId);
+    if (!officiel) return;
+
+    if (!moi.connu) {
+      // Premier état : on se place directement à la position officielle.
+      moi.x = precedent.x = officiel.x;
+      moi.y = precedent.y = officiel.y;
+      moi.connu = true;
+      return;
+    }
+
+    const avantX = moi.x;
+    const avantY = moi.y;
+
+    // 1. On repart de la position du serveur…
+    moi.x = officiel.x;
+    moi.y = officiel.y;
+    // 2. …on oublie les inputs déjà traités…
+    enAttente = enAttente.filter((input) => input.seq > officiel.acq);
+    // 3. …et on rejoue ceux qui ne le sont pas encore.
+    for (const input of enAttente) physics.avancerJoueur(moi, input.touches);
+
+    // S'il y a un écart avec ce qu'on affichait, on ne « téléporte » pas le
+    // carré : on garde l'écart de côté et on le réduit sur quelques images.
+    erreur.x += avantX - moi.x;
+    erreur.y += avantY - moi.y;
+    if (Math.abs(erreur.x) > 150 || Math.abs(erreur.y) > 150) {
+      erreur.x = 0;
+      erreur.y = 0;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Tick local (60 Hz) : lecture du clavier, envoi, prédiction
+  // ---------------------------------------------------------------------------
+  function tickLocal() {
+    if (!moi.connu || !socket || socket.readyState !== WebSocket.OPEN) return;
+
+    const input = { seq: ++seq, touches: lireTouches() };
+    socket.send(JSON.stringify({ t: 'input', seq: input.seq, touches: input.touches }));
+
+    precedent.x = moi.x;
+    precedent.y = moi.y;
+    physics.avancerJoueur(moi, input.touches);
+
+    enAttente.push(input);
+    if (enAttente.length > 120) enAttente.shift();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Interpolation des autres joueurs
+  // ---------------------------------------------------------------------------
+  function joueursInterpoles() {
+    if (historique.length === 0) return [];
+    const cible = performance.now() - DELAI_INTERPOLATION_MS;
+
+    // On cherche les deux états qui encadrent l'instant « cible ».
+    let a = historique[0];
+    let b = historique[0];
+    for (let i = historique.length - 1; i >= 0; i--) {
+      if (historique[i].temps <= cible) {
+        a = historique[i];
+        b = historique[i + 1] || historique[i];
+        break;
+      }
+    }
+    const duree = b.temps - a.temps;
+    const k = duree > 0 ? Math.min(1, Math.max(0, (cible - a.temps) / duree)) : 0;
+
+    const resultat = [];
+    for (const [id, jb] of b.joueurs) {
+      const ja = a.joueurs.get(id) || jb;
+      resultat.push({
+        id,
+        nom: jb.nom,
+        couleur: jb.couleur,
+        x: ja.x + (jb.x - ja.x) * k,
+        y: ja.y + (jb.y - ja.y) * k,
+      });
+    }
+    return resultat;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Affichage
+  // ---------------------------------------------------------------------------
+  function dessinerDecor() {
+    ctx.fillStyle = '#090b17';
+    ctx.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
+
+    // Grille néon discrète.
+    ctx.strokeStyle = 'rgba(60, 90, 200, 0.14)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x <= C.LARGEUR; x += 64) { ctx.moveTo(x, 0); ctx.lineTo(x, C.HAUTEUR); }
+    for (let y = 0; y <= C.HAUTEUR; y += 64) { ctx.moveTo(0, y); ctx.lineTo(C.LARGEUR, y); }
+    ctx.stroke();
+
+    // Cadre de l'arène.
+    ctx.save();
+    ctx.shadowColor = '#00e5ff';
+    ctx.shadowBlur = 18;
+    ctx.strokeStyle = '#00e5ff';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(2, 2, C.LARGEUR - 4, C.HAUTEUR - 4);
+    ctx.restore();
+  }
+
+  function dessinerJoueur(joueur, estMoi) {
+    const taille = C.TAILLE_JOUEUR;
+    ctx.save();
+    ctx.translate(joueur.x, joueur.y);
+
+    // Carré néon : contour lumineux + intérieur translucide.
+    ctx.shadowColor = joueur.couleur;
+    ctx.shadowBlur = 22;
+    ctx.fillStyle = joueur.couleur + '33';
+    ctx.strokeStyle = joueur.couleur;
+    ctx.lineWidth = 4;
+    ctx.fillRect(-taille / 2, -taille / 2, taille, taille);
+    ctx.strokeRect(-taille / 2, -taille / 2, taille, taille);
+
+    // Nom au-dessus.
+    ctx.shadowBlur = 6;
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 16px "Trebuchet MS", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(joueur.nom + (estMoi ? ' (toi)' : ''), 0, -taille / 2 - 12);
+    ctx.restore();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Boucle principale
+  // ---------------------------------------------------------------------------
+  const DUREE_TICK_MS = 1000 / C.TICK_HZ;
+  let dernierTemps = performance.now();
+  let accumulateur = 0;
+
+  function boucle(maintenant) {
+    accumulateur += Math.min(250, maintenant - dernierTemps);
+    dernierTemps = maintenant;
+    while (accumulateur >= DUREE_TICK_MS) {
+      tickLocal();
+      accumulateur -= DUREE_TICK_MS;
+    }
+    // Fraction du tick en cours : permet un affichage fluide même sur un écran
+    // à plus de 60 Hz.
+    const alpha = accumulateur / DUREE_TICK_MS;
+
+    // L'écart de correction fond progressivement.
+    erreur.x *= 0.85;
+    erreur.y *= 0.85;
+
+    dessinerDecor();
+
+    let moiDistant = null;
+    for (const joueur of joueursInterpoles()) {
+      if (joueur.id === monId) { moiDistant = joueur; continue; }
+      dessinerJoueur(joueur, false);
+    }
+    if (moi.connu && moiDistant) {
+      dessinerJoueur({
+        nom: moiDistant.nom,
+        couleur: moiDistant.couleur,
+        x: precedent.x + (moi.x - precedent.x) * alpha + erreur.x,
+        y: precedent.y + (moi.y - precedent.y) * alpha + erreur.y,
+      }, true);
+    }
+
+    requestAnimationFrame(boucle);
+  }
+
+  // Petit accès pour les tests automatiques (lecture seule).
+  window.__nb = { moi, etatDistant: () => joueursInterpoles() };
+
+  connecter();
+  requestAnimationFrame(boucle);
+})();
+</script>
+</body>
+</html>
