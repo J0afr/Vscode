@@ -1,0 +1,17 @@
+# Service systemd : lance le serveur de jeu de Neon Brawl au démarrage de la machine.
+# Installé par deploy/installer.sh dans /etc/systemd/system/.
+[Unit]
+Description=Neon Brawl - serveur de jeu (port 3000)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/neon-brawl
+ExecStart=/usr/bin/env node /opt/neon-brawl/neon-brawl-tout-en-un.js
+Environment=PORT=3000
+Restart=always
+RestartSec=2
+User=www-data
+
+[Install]
+WantedBy=multi-user.target

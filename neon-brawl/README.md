@@ -144,3 +144,23 @@ joueur 2 flèches + `K` `L` `M` `O` (attrape `I`, spécial `P`).
 `Échap` revient au menu.
 
 Comme la version tout-en-un, ce fichier est régénéré par `npm run assembler`.
+
+## Installation complète sur la VM (Apache + serveur de jeu)
+
+Une seule commande installe la page dans Apache, le serveur de jeu, son démarrage
+automatique (systemd) et ouvre le pare-feu :
+
+```bash
+sudo bash deploy/installer.sh
+```
+
+Commandes utiles ensuite :
+
+```bash
+systemctl status neon-brawl      # le serveur de jeu tourne-t-il ?
+sudo systemctl restart neon-brawl
+journalctl -u neon-brawl -f      # voir ses messages
+```
+
+La carte réseau de la VM doit être en mode « accès par pont » (bridge) pour que
+les autres PC du réseau puissent l'atteindre.
