@@ -116,74 +116,116 @@
     //   sols        : blocs pleins (on ne passe pas au travers). y = dessus,
     //                 bas = dessous. On peut s'accrocher à leurs bords.
     //   plateformes : traversables par le dessous ; BAS pour se laisser tomber.
-    //   sortie      : zones d'éjection, au-delà on perd une vie.
     //   departs     : abscisses où les joueurs apparaissent (ils tombent du ciel).
     //   mannequin   : position du mannequin d'entraînement.
+    //   vue         : rectangle que la caméra ne dépasse jamais.
+    //   sortie      : zones d'éjection : au-delà, on perd une vie.
     //   decor       : nom du décor dessiné par le navigateur.
-    // Le monde est vu par une caméra fixe : de x = -160 à 1440, de y = -50 à 850.
+    // La caméra suit les joueurs et dézoome quand ils s'éloignent.
     CARTES: {
       prairie: {
         nom: 'Prairie', decor: 'prairie',
-        sols: [{ x0: 240, x1: 1040, y: 520, bas: 640 }],
+        sols: [{ x0: 0, x1: 1600, y: 600, bas: 740 }],
         plateformes: [
-          { x0: 330, x1: 530, y: 400 },
-          { x0: 750, x1: 950, y: 400 },
-          { x0: 540, x1: 740, y: 285 },
+          { x0: 170, x1: 450, y: 470 },
+          { x0: 1150, x1: 1430, y: 470 },
+          { x0: 600, x1: 1000, y: 360 },
+          { x0: 280, x1: 540, y: 230 },
+          { x0: 1060, x1: 1320, y: 230 },
         ],
-        departs: [440, 840, 600, 680, 360, 920, 520, 760],
-        mannequin: { x: 760, y: 520 },
+        departs: [400, 1200, 800, 600, 1000, 250, 1350, 700],
+        mannequin: { x: 1000, y: 600 },
+        vue: { x0: -700, x1: 2300, y0: -600, y1: 1250 },
+        sortie: { gauche: -950, droite: 2550, haut: -850, bas: 1500 },
       },
       volcan: {
         nom: 'Volcan', decor: 'volcan',
         sols: [
-          { x0: 180, x1: 560, y: 540, bas: 680 },
-          { x0: 720, x1: 1100, y: 540, bas: 680 },
+          { x0: -150, x1: 450, y: 620, bas: 760 },
+          { x0: 680, x1: 1120, y: 560, bas: 700 },
+          { x0: 1350, x1: 1950, y: 620, bas: 760 },
         ],
         plateformes: [
-          { x0: 540, x1: 740, y: 410 },
-          { x0: 280, x1: 440, y: 300 },
-          { x0: 840, x1: 1000, y: 300 },
+          { x0: 400, x1: 720, y: 470 },
+          { x0: 1080, x1: 1400, y: 470 },
+          { x0: 750, x1: 1050, y: 330 },
+          { x0: 0, x1: 260, y: 400 },
+          { x0: 1540, x1: 1800, y: 400 },
         ],
-        departs: [370, 910, 300, 980, 450, 830, 230, 1050],
-        mannequin: { x: 860, y: 540 },
+        departs: [200, 1600, 900, 50, 1750, 560, 1240, 900],
+        mannequin: { x: 1000, y: 560 },
+        vue: { x0: -850, x1: 2650, y0: -650, y1: 1300 },
+        sortie: { gauche: -1100, droite: 2900, haut: -900, bas: 1550 },
       },
       plage: {
         nom: 'Plage', decor: 'plage',
-        sols: [{ x0: 300, x1: 980, y: 500, bas: 590 }],
-        plateformes: [{ x0: 530, x1: 750, y: 370 }],
-        departs: [450, 830, 600, 680, 380, 900, 520, 760],
-        mannequin: { x: 760, y: 500 },
+        sols: [
+          { x0: 0, x1: 1500, y: 580, bas: 680 },
+          { x0: 1720, x1: 2080, y: 640, bas: 710 },
+        ],
+        plateformes: [
+          { x0: 420, x1: 700, y: 450 },
+          { x0: 820, x1: 1100, y: 450 },
+          { x0: 620, x1: 900, y: 320 },
+          { x0: 1460, x1: 1760, y: 500 },
+        ],
+        departs: [350, 1150, 750, 1900, 550, 950, 200, 1300],
+        mannequin: { x: 1000, y: 580 },
+        vue: { x0: -700, x1: 2750, y0: -600, y1: 1250 },
+        sortie: { gauche: -950, droite: 3000, haut: -850, bas: 1500 },
       },
       sommet: {
         nom: 'Sommet enneigé', decor: 'sommet',
-        sols: [{ x0: 260, x1: 1020, y: 530, bas: 700 }],
+        sols: [{ x0: 0, x1: 1900, y: 620, bas: 900 }],
         plateformes: [
-          { x0: 300, x1: 480, y: 400 },
-          { x0: 800, x1: 980, y: 400 },
+          { x0: 180, x1: 440, y: 490 },
+          { x0: 1460, x1: 1720, y: 490 },
+          { x0: 560, x1: 880, y: 380 },
+          { x0: 1020, x1: 1340, y: 380 },
+          { x0: 800, x1: 1100, y: 250 },
         ],
-        departs: [440, 840, 600, 680, 340, 940, 520, 760],
-        mannequin: { x: 760, y: 530 },
+        departs: [450, 1450, 950, 250, 1650, 700, 1200, 950],
+        mannequin: { x: 1150, y: 620 },
+        vue: { x0: -750, x1: 2650, y0: -650, y1: 1300 },
+        sortie: { gauche: -1000, droite: 2900, haut: -900, bas: 1550 },
       },
       ruines: {
         nom: 'Ruines célestes', decor: 'ruines',
-        sols: [{ x0: 330, x1: 950, y: 540, bas: 620 }],
-        plateformes: [
-          { x0: 150, x1: 310, y: 440 },
-          { x0: 970, x1: 1130, y: 440 },
-          { x0: 540, x1: 740, y: 330 },
+        sols: [
+          { x0: -300, x1: 60, y: 520, bas: 600 },
+          { x0: 300, x1: 1300, y: 620, bas: 720 },
+          { x0: 1540, x1: 1900, y: 520, bas: 600 },
         ],
-        departs: [470, 810, 230, 1050, 600, 680, 400, 880],
-        mannequin: { x: 760, y: 540 },
+        plateformes: [
+          { x0: 60, x1: 300, y: 600 },
+          { x0: 1300, x1: 1540, y: 600 },
+          { x0: 450, x1: 720, y: 480 },
+          { x0: 880, x1: 1150, y: 480 },
+          { x0: 660, x1: 940, y: 340 },
+        ],
+        departs: [550, 1050, 800, -120, 1720, 400, 1200, 800],
+        mannequin: { x: 1000, y: 620 },
+        vue: { x0: -1000, x1: 2600, y0: -650, y1: 1250 },
+        sortie: { gauche: -1250, droite: 2850, haut: -900, bas: 1500 },
       },
       ville: {
         nom: 'Toits de la ville', decor: 'ville',
-        sols: [{ x0: 220, x1: 1060, y: 520, bas: 900 }],
-        plateformes: [],
-        departs: [440, 840, 600, 680, 330, 950, 520, 760],
-        mannequin: { x: 760, y: 520 },
+        sols: [
+          { x0: -250, x1: 450, y: 600, bas: 1500 },
+          { x0: 650, x1: 1150, y: 520, bas: 1500 },
+          { x0: 1350, x1: 2000, y: 620, bas: 1500 },
+        ],
+        plateformes: [
+          { x0: 380, x1: 720, y: 430 },
+          { x0: 1080, x1: 1420, y: 440 },
+        ],
+        departs: [100, 1650, 900, -100, 1850, 300, 1450, 900],
+        mannequin: { x: 1000, y: 520 },
+        vue: { x0: -950, x1: 2700, y0: -650, y1: 1300 },
+        sortie: { gauche: -1200, droite: 2950, haut: -900, bas: 1550 },
       },
     },
-    SORTIE: { gauche: -230, droite: 1510, haut: -220, bas: 900 },
+    SORTIE: { gauche: -230, droite: 1510, haut: -220, bas: 900 }, // valeur par défaut
 
     // --- Règles ---
     VIES: 3,
@@ -205,7 +247,9 @@
   constants.choisirCarte = function (id) {
     const carte = constants.CARTES[id] || constants.CARTES.prairie;
     carte.id = constants.CARTES[id] ? id : 'prairie';
-    carte.sortie = constants.SORTIE;
+    carte.sortie = carte.sortie || constants.SORTIE;
+    // Hauteur d'où l'on retombe après une éjection : bien au-dessus des sols.
+    carte.yApparition = Math.min(...carte.sols.map((s) => s.y)) - 420;
     // Milieu de l'arène : entre le bord gauche du premier sol et le bord droit du dernier.
     carte.centre = (carte.sols[0].x0 + carte.sols[carte.sols.length - 1].x1) / 2;
     constants.carte = carte;
@@ -1249,7 +1293,7 @@ function gererSorties(joueurs, evenements) {
 }
 
 /** Remet un joueur en jeu au-dessus de l'arène, brièvement invulnérable. */
-function reapparaitre(p, x, y = 140) {
+function reapparaitre(p, x, y = C.carte.yApparition) {
   const garde = { nAtk: p.nAtk, prev: p.prev };
   Object.assign(p, physics.nouvelEtat(x, y), garde);
   p.degats = 0;
@@ -1889,9 +1933,66 @@ NB.capacites = module.exports;
   redimensionner();
 
   // Caméra fixe : on voit l'arène avec un peu de marge autour.
-  const ZOOM = 0.8;
-  const CAM_X = C.LARGEUR / 2 - 640 * ZOOM;
-  const CAM_Y = C.HAUTEUR / 2 - 400 * ZOOM;
+  // ---------------------------------------------------------------------------
+  // Caméra : elle suit les combattants et dézoome quand ils s'éloignent les
+  // uns des autres, sans jamais sortir du rectangle « vue » de la carte.
+  // ---------------------------------------------------------------------------
+  const cam = { x: 640, y: 400, z: 0.6, pret: false }; // centre visé (monde) et zoom
+  const ZOOM_MAX = 1.0;
+
+  /** Zoom le plus faible permis : celui qui montre toute la vue de la carte. */
+  function zoomMinimal() {
+    const v = C.carte.vue;
+    return Math.max(C.LARGEUR / (v.x1 - v.x0), C.HAUTEUR / (v.y1 - v.y0));
+  }
+
+  function majCamera(joueurs, dt) {
+    const v = C.carte.vue;
+    const zmin = zoomMinimal();
+    let x0 = Infinity;
+    let x1 = -Infinity;
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (const j of joueurs) {
+      if (j.etat === 'mort') continue;
+      // Un joueur éjecté hors de la vue n'entraîne pas la caméra avec lui.
+      const x = Math.max(v.x0, Math.min(v.x1, j.x));
+      const y = Math.max(v.y0, Math.min(v.y1, j.y));
+      x0 = Math.min(x0, x - 300);
+      x1 = Math.max(x1, x + 300);
+      y0 = Math.min(y0, y - 330);
+      y1 = Math.max(y1, y + 230); // de la place pour le panneau du bas
+    }
+    if (x0 === Infinity) { x0 = v.x0; x1 = v.x1; y0 = v.y0; y1 = v.y1; }
+    // Le cœur de l'arène reste toujours dans le cadre : on voit où l'on va retomber.
+    const hautSols = Math.min(...C.carte.sols.map((sol) => sol.y));
+    x0 = Math.min(x0, C.carte.centre - 450);
+    x1 = Math.max(x1, C.carte.centre + 450);
+    y1 = Math.max(y1, hautSols + 230);
+
+    const z = Math.max(zmin, Math.min(ZOOM_MAX, C.LARGEUR / (x1 - x0), C.HAUTEUR / (y1 - y0)));
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    if (!cam.pret) {
+      Object.assign(cam, { x: cx, y: cy, z, pret: true });
+    } else {
+      // Mouvement amorti : la caméra glisse au lieu de sauter.
+      const k = 1 - Math.pow(0.92, dt);
+      cam.z += (z - cam.z) * k;
+      cam.x += (cx - cam.x) * k;
+      cam.y += (cy - cam.y) * k;
+    }
+    // On ne montre jamais ce qui dépasse la vue de la carte.
+    const demiL = C.LARGEUR / (2 * cam.z);
+    const demiH = C.HAUTEUR / (2 * cam.z);
+    cam.x = v.x1 - v.x0 <= demiL * 2 ? (v.x0 + v.x1) / 2 : Math.max(v.x0 + demiL, Math.min(v.x1 - demiL, cam.x));
+    cam.y = v.y1 - v.y0 <= demiH * 2 ? (v.y0 + v.y1) / 2 : Math.max(v.y0 + demiH, Math.min(v.y1 - demiH, cam.y));
+  }
+
+  /** Coordonnées écran d'un point du monde. */
+  function versEcran(x, y) {
+    return [(x - cam.x) * cam.z + C.LARGEUR / 2, (y - cam.y) * cam.z + C.HAUTEUR / 2];
+  }
 
   // ===========================================================================
   // SONS — tout est synthétisé avec la Web Audio API, aucun fichier audio.
@@ -2225,7 +2326,7 @@ NB.capacites = module.exports;
     } else if (ev.t === 'ko') {
       sons.ko();
       // Explosion dirigée vers le centre de l'arène, depuis le bord de sortie.
-      const angle = Math.atan2(400 - ev.y, 640 - ev.x);
+      const angle = Math.atan2(cam.y - ev.y, cam.x - ev.x);
       etincelles(ev.x, ev.y, couleur, 70, 26, angle, 0.7);
       etincelles(ev.x, ev.y, '#ffffff', 40, 20, angle, 0.5);
       rayons.push({ x: ev.x, y: ev.y, angle, vie: 34, max: 34, couleur });
@@ -2290,10 +2391,21 @@ NB.capacites = module.exports;
   // vagues, neige…) est redessinée à chaque image.
   // Tout est dessiné en coordonnées du monde (mêmes unités que la physique).
   // ===========================================================================
+  // Deux images préparées à chaque changement de carte :
+  //   « fond »  : le paysage lointain (ciel, montagnes…), en basse résolution ;
+  //               il défile moins vite que l'arène (effet de profondeur) ;
+  //   « scene » : les sols, plateformes et décorations, à l'échelle 1.
   const fond = document.createElement('canvas');
-  fond.width = C.LARGEUR;
-  fond.height = C.HAUTEUR;
-  const MONDE = { x0: -170, x1: 1450, y0: -60, y1: 860 }; // zone visible par la caméra
+  const scene = document.createElement('canvas');
+  const RES_FOND = 0.5;
+  // Les paysages sont dessinés dans leur propre repère, de 1620 × 920 unités
+  // (x de -170 à 1450, y de -60 à 860), agrandi pour couvrir toute la vue.
+  // MONDE : zone couverte, dans ce repère. PAYSAGE : passage au repère du monde
+  // (x_monde = ox + s × x_paysage).
+  const MONDE = { x0: -170, x1: 1450, y0: -60, y1: 860 };
+  const PAYSAGE = { s: 1, ox: 0, oy: 0 };
+  const ZONE_FOND = { x0: 0, y0: 0, l: 1, h: 1 };  // zone du monde couverte par « fond »
+  const ZONE_SCENE = { x0: 0, y0: 0 };             // coin haut gauche de « scene » dans le monde
   const CONTOUR = '#1d1a26';                               // couleur des contours
 
   /** Générateur pseudo-aléatoire : les décors sont toujours identiques. */
@@ -2454,7 +2566,7 @@ NB.capacites = module.exports;
    *   st.motif   : fonction de détails (f, s)
    */
   function dessinerSol(f, s, st) {
-    const bas = Math.min(s.bas === undefined ? 900 : s.bas, 900);
+    const bas = profondeurSol(s);
     const alea = aleaGraine(Math.round(s.x0 * 7 + s.y));
     f.lineJoin = 'round';
     f.lineCap = 'round';
@@ -2545,12 +2657,12 @@ NB.capacites = module.exports;
         for (const [x, y, s] of [[40, 70, 1.3], [430, 20, 0.9], [830, 120, 1.1]]) nuage(f, x, y, s, '#ffffff');
         relief(f, alea, 560, 190, 260, '#b4dcc0', false);
         relief(f, alea, 650, 160, 210, '#86c777', false);
-        for (let i = 0; i < 10; i++) {
+        for (let i = 0; MONDE.x0 + 60 + i * 175 < MONDE.x1; i++) {
           const x = MONDE.x0 + 60 + i * 175 + alea() * 70;
           arbre(f, x, 650 + alea() * 50, 0.8 + alea() * 0.5, '#4f9f3c', 'rgba(0,0,0,0.12)');
         }
         f.fillStyle = '#5aa448';
-        f.fillRect(MONDE.x0, 740, MONDE.x1 - MONDE.x0, 200);
+        f.fillRect(MONDE.x0, 740, MONDE.x1 - MONDE.x0, MONDE.y1 - 740);
       },
       sol: {
         corps: ['#a8743f', '#5f3c1f'], dessus: '#66c23f', epaisseur: 22, ondule: true, pointe: 140,
@@ -2688,8 +2800,8 @@ NB.capacites = module.exports;
         f.ellipse(1260, 575, 180, 38, 0, Math.PI, 0);
         f.fill();
         // La mer et le reflet du soleil.
-        f.fillStyle = degradeV(f, 570, 860, [[0, '#3f7fbf'], [1, '#173a6a']]);
-        f.fillRect(MONDE.x0, 570, MONDE.x1 - MONDE.x0, 300);
+        f.fillStyle = degradeV(f, 570, MONDE.y1, [[0, '#3f7fbf'], [1, '#173a6a']]);
+        f.fillRect(MONDE.x0, 570, MONDE.x1 - MONDE.x0, MONDE.y1 - 570);
         f.fillStyle = 'rgba(255,225,150,0.7)';
         for (let i = 0; i < 14; i++) {
           const y = 580 + i * 14;
@@ -2732,10 +2844,12 @@ NB.capacites = module.exports;
           }
         },
       },
-      decoration(f) {
-        // Palmiers aux deux bouts de l'île (purement décoratifs, derrière les joueurs).
-        palmier(f, 340, 500, 1, 1);
-        palmier(f, 935, 500, 0.85, -1);
+      decoration(f, carte) {
+        // Palmiers sur l'île (purement décoratifs, derrière les joueurs).
+        const s = carte.sols[0];
+        palmier(f, s.x0 + 50, s.y, 1.1, 1);
+        palmier(f, s.x1 - 70, s.y, 0.95, -1);
+        palmier(f, (s.x0 + s.x1) / 2 + 160, s.y, 0.8, 1);
       },
       anim(f, t) {
         // Vagues au pied de l'île.
@@ -2770,7 +2884,7 @@ NB.capacites = module.exports;
       fond(f) {
         const alea = aleaGraine(41);
         remplirCiel(f, [[0, '#08142e'], [0.5, '#1f3a6a'], [1, '#7f9fcf']]);
-        for (let i = 0; i < 90; i++) disque(f, MONDE.x0 + alea() * 1620, MONDE.y0 + alea() * 420, alea() < 0.85 ? 1.2 : 2, 'rgba(255,255,255,0.8)');
+        for (let i = 0; i < 160; i++) disque(f, MONDE.x0 + alea() * (MONDE.x1 - MONDE.x0), MONDE.y0 + alea() * 480, alea() < 0.85 ? 1.2 : 2, 'rgba(255,255,255,0.8)');
         // Aurore boréale : des voiles verts et bleus.
         for (const [y, couleur] of [[90, 'rgba(90,255,180,0.22)'], [150, 'rgba(120,200,255,0.18)'], [60, 'rgba(160,120,255,0.14)']]) {
           f.fillStyle = couleur;
@@ -2801,9 +2915,9 @@ NB.capacites = module.exports;
             f.fill();
           }
         }
-        for (let i = 0; i < 14; i++) sapin(f, MONDE.x0 + 40 + i * 120 + alea() * 40, 760 + alea() * 40, 1 + alea() * 0.6, '#1f3b3a', '#eef4ff');
+        for (let i = 0; MONDE.x0 + 40 + i * 120 < MONDE.x1; i++) sapin(f, MONDE.x0 + 40 + i * 120 + alea() * 40, 760 + alea() * 40, 1 + alea() * 0.6, '#1f3b3a', '#eef4ff');
         f.fillStyle = '#e8f0ff';
-        f.fillRect(MONDE.x0, 800, MONDE.x1 - MONDE.x0, 100);
+        f.fillRect(MONDE.x0, 800, MONDE.x1 - MONDE.x0, MONDE.y1 - 800);
       },
       sol: {
         corps: ['#7d8ea3', '#3c4658'], dessus: '#f4f8ff', epaisseur: 22, ondule: true, pointe: 90, reflet: 'rgba(170,200,255,0.6)',
@@ -2880,7 +2994,9 @@ NB.capacites = module.exports;
           f.fillRect(x + 25 * s, y - 55 * s, 18 * s, 55 * s);
         }
         // Mer de nuages.
-        for (let i = 0; i < 26; i++) nuage(f, MONDE.x0 + i * 66 + alea() * 30, 720 + alea() * 50, 1.2 + alea() * 0.6, i % 2 ? '#ffffff' : '#f2f0ff');
+        f.fillStyle = '#ffffff';
+        f.fillRect(MONDE.x0, 760, MONDE.x1 - MONDE.x0, MONDE.y1 - 760);
+        for (let i = 0; MONDE.x0 + i * 66 < MONDE.x1; i++) nuage(f, MONDE.x0 + i * 66 + alea() * 30, 720 + alea() * 50, 1.2 + alea() * 0.6, i % 2 ? '#ffffff' : '#f2f0ff');
       },
       sol: {
         corps: ['#d8cbb0', '#9a8a70'], dessus: '#f4efe4', epaisseur: 18, pointe: 120, reflet: 'rgba(255,255,255,0.7)',
@@ -2964,7 +3080,7 @@ NB.capacites = module.exports;
       fond(f) {
         const alea = aleaGraine(99);
         remplirCiel(f, [[0, '#0b0f2a'], [0.55, '#2a2350'], [1, '#6a3a6a']]);
-        for (let i = 0; i < 60; i++) disque(f, MONDE.x0 + alea() * 1620, MONDE.y0 + alea() * 360, 1.2, 'rgba(255,255,255,0.7)');
+        for (let i = 0; i < 110; i++) disque(f, MONDE.x0 + alea() * (MONDE.x1 - MONDE.x0), MONDE.y0 + alea() * 420, 1.2, 'rgba(255,255,255,0.7)');
         halo(f, 1080, 120, 160, 'rgba(255,250,220,0.35)');
         disque(f, 1080, 120, 60, '#fff6d8');
         // Deux rangées d'immeubles avec des fenêtres allumées.
@@ -3018,24 +3134,25 @@ NB.capacites = module.exports;
       },
       plateforme: { corps: '#555a66', dessus: '#7a7f8c', epaisseur: 14 },
       decoration(f, carte) {
-        // Château d'eau et bouche d'aération sur le toit (décoratifs).
+        // Château d'eau et bouche d'aération sur les toits (décoratifs).
         const s = carte.sols[0];
         f.strokeStyle = CONTOUR;
         f.lineWidth = 3;
-        const x = s.x1 - 150;
+        const haut = carte.sols[carte.sols.length - 1];
+        const x = haut.x1 - 140;
         f.fillStyle = '#4a3a30';
-        f.fillRect(x - 30, s.y - 50, 6, 50);
-        f.fillRect(x + 24, s.y - 50, 6, 50);
+        f.fillRect(x - 30, haut.y - 50, 6, 50);
+        f.fillRect(x + 24, haut.y - 50, 6, 50);
         f.fillStyle = '#8a5a3a';
         f.beginPath();
-        f.roundRect(x - 40, s.y - 120, 80, 72, 8);
+        f.roundRect(x - 40, haut.y - 120, 80, 72, 8);
         f.fill();
         f.stroke();
         f.fillStyle = '#5a3a2a';
         f.beginPath();
-        f.moveTo(x - 46, s.y - 120);
-        f.lineTo(x, s.y - 150);
-        f.lineTo(x + 46, s.y - 120);
+        f.moveTo(x - 46, haut.y - 120);
+        f.lineTo(x, haut.y - 150);
+        f.lineTo(x + 46, haut.y - 120);
         f.closePath();
         f.fill();
         f.stroke();
@@ -3056,35 +3173,89 @@ NB.capacites = module.exports;
 
   let carteDessinee = C.carte.id; // carte dont le décor est dans « fond »
 
-  /** Dessine la partie fixe du décor de la carte en cours dans l'image « fond ». */
+  /** Prépare les deux images du décor (« fond » et « scene ») pour la carte en cours. */
   function dessinerFond() {
-    const f = fond.getContext('2d');
     const carte = C.carte;
     const decor = DECORS[carte.decor] || DECORS.prairie;
+    const v = carte.vue;
     carteDessinee = carte.id;
-    f.setTransform(ZOOM, 0, 0, ZOOM, CAM_X, CAM_Y);
-    decor.fond(f);
-    if (decor.decoration) decor.decoration(f, carte);
-    for (const s of carte.sols) dessinerSol(f, s, decor.sol);
-    for (const pl of carte.plateformes) dessinerPlateforme(f, pl, decor.plateforme);
-    f.setTransform(1, 0, 0, 1, 0, 0);
-    // Une légère vignette sombre sur les bords.
-    const v = f.createRadialGradient(640, 360, 300, 640, 360, 800);
-    v.addColorStop(0, 'rgba(0,0,0,0)');
-    v.addColorStop(1, 'rgba(0,0,0,0.35)');
-    f.fillStyle = v;
-    f.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
-  }
-  dessinerFond();
+    cam.pret = false;
 
-  /** Partie animée du décor (à appeler en coordonnées du monde). */
-  function animerDecor(t) {
-    const decor = DECORS[C.carte.decor] || DECORS.prairie;
-    if (!decor.anim) return;
-    ctx.save();
-    decor.anim(ctx, t);
-    ctx.restore();
+    // --- 1. Paysage lointain : il couvre la vue, avec une marge pour le défilement ---
+    const marge = 0.2;
+    ZONE_FOND.x0 = v.x0 - (v.x1 - v.x0) * marge;
+    ZONE_FOND.y0 = v.y0 - (v.y1 - v.y0) * marge;
+    ZONE_FOND.l = (v.x1 - v.x0) * (1 + 2 * marge);
+    ZONE_FOND.h = (v.y1 - v.y0) * (1 + 2 * marge);
+    PAYSAGE.s = (v.y1 - v.y0) / 920;
+    PAYSAGE.ox = (v.x0 + v.x1) / 2 - 640 * PAYSAGE.s;
+    PAYSAGE.oy = v.y0 + 60 * PAYSAGE.s;
+    MONDE.x0 = (ZONE_FOND.x0 - PAYSAGE.ox) / PAYSAGE.s;
+    MONDE.x1 = (ZONE_FOND.x0 + ZONE_FOND.l - PAYSAGE.ox) / PAYSAGE.s;
+    MONDE.y0 = (ZONE_FOND.y0 - PAYSAGE.oy) / PAYSAGE.s;
+    MONDE.y1 = (ZONE_FOND.y0 + ZONE_FOND.h - PAYSAGE.oy) / PAYSAGE.s;
+
+    fond.width = Math.ceil(ZONE_FOND.l * RES_FOND);
+    fond.height = Math.ceil(ZONE_FOND.h * RES_FOND);
+    const f = fond.getContext('2d');
+    f.setTransform(RES_FOND, 0, 0, RES_FOND, -ZONE_FOND.x0 * RES_FOND, -ZONE_FOND.y0 * RES_FOND);
+    f.transform(PAYSAGE.s, 0, 0, PAYSAGE.s, PAYSAGE.ox, PAYSAGE.oy);
+    decor.fond(f);
+
+    // --- 2. L'arène : sols, plateformes et décorations ---
+    const tout = carte.sols.concat(carte.plateformes);
+    const x0 = Math.min(...tout.map((e) => e.x0)) - 140;
+    const x1 = Math.max(...tout.map((e) => e.x1)) + 140;
+    const y0 = Math.min(...tout.map((e) => e.y)) - 280;
+    const y1 = Math.max(...carte.sols.map((e) => profondeurSol(e) + (decor.sol.pointe || 0))) + 30;
+    scene.width = Math.ceil(x1 - x0);
+    scene.height = Math.ceil(y1 - y0);
+    ZONE_SCENE.x0 = x0;
+    ZONE_SCENE.y0 = y0;
+    const g = scene.getContext('2d');
+    g.setTransform(1, 0, 0, 1, -x0, -y0);
+    if (decor.decoration) decor.decoration(g, carte);
+    for (const sol of carte.sols) dessinerSol(g, sol, decor.sol);
+    for (const pl of carte.plateformes) dessinerPlateforme(g, pl, decor.plateforme);
   }
+
+  /** Jusqu'où on dessine un sol vers le bas (les immeubles s'arrêtent hors champ). */
+  function profondeurSol(sol) {
+    return Math.min(sol.bas === undefined ? sol.y + 650 : sol.bas, sol.y + 650);
+  }
+
+  // Vignette sombre sur les bords de l'écran (préparée une fois).
+  const vignette = ctx.createRadialGradient(640, 360, 320, 640, 360, 820);
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.3)');
+
+  /**
+   * Dessine le décor complet pour la caméra actuelle : paysage (avec effet de
+   * profondeur), sa partie animée, puis l'arène. Laisse le contexte dans le
+   * repère du monde, prêt pour les personnages.
+   */
+  function dessinerDecor(t, dx, dy) {
+    const v = C.carte.vue;
+    const zmin = zoomMinimal();
+    // Le paysage bouge et zoome moins que l'arène : il paraît lointain.
+    const p = 0.35;
+    const zb = zmin + (cam.z - zmin) * p;
+    const bx = (v.x0 + v.x1) / 2 + (cam.x - (v.x0 + v.x1) / 2) * p;
+    const by = (v.y0 + v.y1) / 2 + (cam.y - (v.y0 + v.y1) / 2) * p;
+    ctx.setTransform(zb, 0, 0, zb, C.LARGEUR / 2 - bx * zb + dx * 0.4, C.HAUTEUR / 2 - by * zb + dy * 0.4);
+    ctx.drawImage(fond, ZONE_FOND.x0, ZONE_FOND.y0, ZONE_FOND.l, ZONE_FOND.h);
+    const decor = DECORS[C.carte.decor] || DECORS.prairie;
+    if (decor.anim) {
+      ctx.save();
+      ctx.transform(PAYSAGE.s, 0, 0, PAYSAGE.s, PAYSAGE.ox, PAYSAGE.oy);
+      decor.anim(ctx, t);
+      ctx.restore();
+    }
+    ctx.setTransform(cam.z, 0, 0, cam.z, C.LARGEUR / 2 - cam.x * cam.z + dx, C.HAUTEUR / 2 - cam.y * cam.z + dy);
+    ctx.drawImage(scene, ZONE_SCENE.x0, ZONE_SCENE.y0);
+  }
+
+  dessinerFond();
 
   /** Hauteur de la première surface sous le point (x, y), pour l'ombre des joueurs. */
   function surfaceDessous(x, y) {
@@ -3699,7 +3870,7 @@ NB.capacites = module.exports;
       ctx.save();
       ctx.translate(r.x, r.y);
       ctx.rotate(r.angle);
-      const longueur = 1500;
+      const longueur = 3000;
       const largeur = 90 * k;
       const degrade = ctx.createLinearGradient(0, 0, longueur, 0);
       degrade.addColorStop(0, '#ffffff');
@@ -3856,8 +4027,7 @@ NB.capacites = module.exports;
 
   /** Repère au bord de l'écran pour un joueur sorti du champ mais pas encore éjecté. */
   function dessinerHorsChamp(j) {
-    const sx = j.x * ZOOM + CAM_X;
-    const sy = (j.y - 30) * ZOOM + CAM_Y;
+    const [sx, sy] = versEcran(j.x, j.y - 30);
     if (sx > 0 && sx < C.LARGEUR && sy > 0 && sy < C.HAUTEUR) return;
     const bx = Math.max(26, Math.min(C.LARGEUR - 26, sx));
     const by = Math.max(26, Math.min(C.HAUTEUR - 110, sy));
@@ -3927,10 +4097,8 @@ NB.capacites = module.exports;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
-    ctx.drawImage(fond, dx, dy);
-
-    ctx.setTransform(ZOOM, 0, 0, ZOOM, CAM_X + dx, CAM_Y + dy);
-    animerDecor(maintenant);
+    majCamera(joueurs, dt);
+    dessinerDecor(maintenant, dx, dy);
     const vivants = joueurs.filter((j) => j.etat !== 'mort');
     for (const j of vivants) dessinerOmbre(j);
     for (const j of vivants) {
@@ -3964,6 +4132,8 @@ NB.capacites = module.exports;
 
     // --- Interface (coordonnées écran) ---
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
     for (const j of vivants) dessinerHorsChamp(j);
     dessinerInterface(joueurs);
     if (flash > 0.01) {

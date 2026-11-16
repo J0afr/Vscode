@@ -216,7 +216,7 @@ function gererSorties(joueurs, evenements) {
 }
 
 /** Remet un joueur en jeu au-dessus de l'arène, brièvement invulnérable. */
-function reapparaitre(p, x, y = 140) {
+function reapparaitre(p, x, y = C.carte.yApparition) {
   const garde = { nAtk: p.nAtk, prev: p.prev };
   Object.assign(p, physics.nouvelEtat(x, y), garde);
   p.degats = 0;

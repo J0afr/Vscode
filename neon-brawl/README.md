@@ -106,19 +106,23 @@ Au bout de 5 secondes, on lâche tout seul.
 
 ### Les cartes
 
+Les cartes sont grandes : la **caméra suit les combattants** et dézoome quand ils
+s'éloignent les uns des autres, en gardant toujours le cœur de l'arène dans le cadre.
+Le paysage du fond défile moins vite que l'arène, pour donner de la profondeur.
+
 | Carte | Particularités |
 | --- | --- |
-| **Prairie** | Île flottante herbeuse et trois plateformes, l'arène classique |
-| **Volcan** | Deux îles de roche séparées par un vide, au-dessus d'une mer de lave |
-| **Plage** | Île de sable au coucher du soleil, une seule plateforme |
-| **Sommet enneigé** | Grande arène sous une aurore boréale, deux plateformes basses |
-| **Ruines célestes** | Temple au-dessus des nuages, plateformes au-delà des bords |
-| **Toits de la ville** | Toit d'immeuble de nuit, sans aucune plateforme |
+| **Prairie** | Grande île flottante herbeuse et cinq plateformes sur trois étages |
+| **Volcan** | Trois îles de roche (celle du milieu plus haute) au-dessus d'une mer de lave |
+| **Plage** | Grande île de sable et un îlot séparé, reliés par une passerelle |
+| **Sommet enneigé** | La plus large arène, sous une aurore boréale, cinq plateformes |
+| **Ruines célestes** | Temple central et deux îlots sur les côtés, au-dessus des nuages |
+| **Toits de la ville** | Trois toits d'immeubles de hauteurs différentes, à franchir en sautant |
 
 En local, la carte se choisit dans le menu (ou « Au hasard »). En réseau, `Tab`
 passe à la carte suivante pour tout le monde (les vies sont remises à zéro).
-Pour ajouter une carte : sa géométrie dans `CARTES` (`game/constants.js`) et son
-décor dans `DECORS` (`public/index.html`).
+Pour ajouter une carte : sa géométrie, sa vue et ses zones d'éjection dans `CARTES`
+(`game/constants.js`), et son décor dans `DECORS` (`public/index.html`).
 
 Pour ajouter un personnage : une entrée dans `PERSOS` (`game/characters.js`) et une
 entrée dans `STYLES` (`public/index.html`) pour son apparence.
