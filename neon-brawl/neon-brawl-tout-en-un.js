@@ -47,19 +47,78 @@ MODULES['constants'] = function (module, exports, require) {
         LARGEUR: 1280,
         HAUTEUR: 720,
 
-        // --- Arène ---
-        // Bloc principal : plein, on ne passe pas au travers. Il descend jusqu'en
-        // bas de l'écran (une sorte de tour), ses côtés sont des murs.
-        SOL_Y: 520,
-        BLOC: { x0: 240, x1: 1040 },
-        // Plateformes flottantes : on les traverse par le dessous, et on peut se
-        // laisser tomber au travers avec BAS.
-        PLATEFORMES: [
-          { x0: 330, x1: 530, y: 400 },
-          { x0: 750, x1: 950, y: 400 },
-          { x0: 540, x1: 740, y: 285 },
-        ],
-        // Zones d'éjection : au-delà, on perd une vie.
+        // --- Cartes ---
+        // Chaque carte décrit :
+        //   sols        : blocs pleins (on ne passe pas au travers). y = dessus,
+        //                 bas = dessous. On peut s'accrocher à leurs bords.
+        //   plateformes : traversables par le dessous ; BAS pour se laisser tomber.
+        //   sortie      : zones d'éjection, au-delà on perd une vie.
+        //   departs     : abscisses où les joueurs apparaissent (ils tombent du ciel).
+        //   mannequin   : position du mannequin d'entraînement.
+        //   decor       : nom du décor dessiné par le navigateur.
+        // Le monde est vu par une caméra fixe : de x = -160 à 1440, de y = -50 à 850.
+        CARTES: {
+          prairie: {
+            nom: 'Prairie', decor: 'prairie',
+            sols: [{ x0: 240, x1: 1040, y: 520, bas: 640 }],
+            plateformes: [
+              { x0: 330, x1: 530, y: 400 },
+              { x0: 750, x1: 950, y: 400 },
+              { x0: 540, x1: 740, y: 285 },
+            ],
+            departs: [440, 840, 600, 680, 360, 920, 520, 760],
+            mannequin: { x: 760, y: 520 },
+          },
+          volcan: {
+            nom: 'Volcan', decor: 'volcan',
+            sols: [
+              { x0: 180, x1: 560, y: 540, bas: 680 },
+              { x0: 720, x1: 1100, y: 540, bas: 680 },
+            ],
+            plateformes: [
+              { x0: 540, x1: 740, y: 410 },
+              { x0: 280, x1: 440, y: 300 },
+              { x0: 840, x1: 1000, y: 300 },
+            ],
+            departs: [370, 910, 300, 980, 450, 830, 230, 1050],
+            mannequin: { x: 860, y: 540 },
+          },
+          plage: {
+            nom: 'Plage', decor: 'plage',
+            sols: [{ x0: 300, x1: 980, y: 500, bas: 590 }],
+            plateformes: [{ x0: 530, x1: 750, y: 370 }],
+            departs: [450, 830, 600, 680, 380, 900, 520, 760],
+            mannequin: { x: 760, y: 500 },
+          },
+          sommet: {
+            nom: 'Sommet enneigé', decor: 'sommet',
+            sols: [{ x0: 260, x1: 1020, y: 530, bas: 700 }],
+            plateformes: [
+              { x0: 300, x1: 480, y: 400 },
+              { x0: 800, x1: 980, y: 400 },
+            ],
+            departs: [440, 840, 600, 680, 340, 940, 520, 760],
+            mannequin: { x: 760, y: 530 },
+          },
+          ruines: {
+            nom: 'Ruines célestes', decor: 'ruines',
+            sols: [{ x0: 330, x1: 950, y: 540, bas: 620 }],
+            plateformes: [
+              { x0: 150, x1: 310, y: 440 },
+              { x0: 970, x1: 1130, y: 440 },
+              { x0: 540, x1: 740, y: 330 },
+            ],
+            departs: [470, 810, 230, 1050, 600, 680, 400, 880],
+            mannequin: { x: 760, y: 540 },
+          },
+          ville: {
+            nom: 'Toits de la ville', decor: 'ville',
+            sols: [{ x0: 220, x1: 1060, y: 520, bas: 900 }],
+            plateformes: [],
+            departs: [440, 840, 600, 680, 330, 950, 520, 760],
+            mannequin: { x: 760, y: 520 },
+          },
+        },
         SORTIE: { gauche: -230, droite: 1510, haut: -220, bas: 900 },
 
         // --- Règles ---
@@ -76,6 +135,19 @@ MODULES['constants'] = function (module, exports, require) {
         },
         MASQUE_TOUCHES: 2047,
       };
+
+      // Carte en cours. Les modules de règles lisent toujours « C.carte » : changer
+      // de carte se fait donc en un seul appel, côté serveur comme côté navigateur.
+      constants.choisirCarte = function (id) {
+        const carte = constants.CARTES[id] || constants.CARTES.prairie;
+        carte.id = constants.CARTES[id] ? id : 'prairie';
+        carte.sortie = constants.SORTIE;
+        // Milieu de l'arène : entre le bord gauche du premier sol et le bord droit du dernier.
+        carte.centre = (carte.sols[0].x0 + carte.sols[carte.sols.length - 1].x1) / 2;
+        constants.carte = carte;
+        return carte;
+      };
+      constants.choisirCarte('prairie');
 
       if (typeof module !== 'undefined' && module.exports) {
         module.exports = constants;
@@ -143,6 +215,12 @@ MODULES['characters'] = function (module, exports, require) {
             objet: { type: 'zone', style: 'brasier', auSol: true, dx: 90, l: 60, h: 50, vie: 260, intervalle: 24,
               deg: 2.2, base: 2.5, ech: 0, angle: 80, sansGel: true },
           },
+          // Capacité aérienne : SPÉCIAL en l'air (ou HAUT + SPÉCIAL).
+          spe3: {
+            nom: 'Envol ardent', debut: 10, actif: 20, total: 40, recharge: 80, suspend: true,
+            elan: { vx: 7, vy: -11, tenir: true }, geste: [30, -70, 0],
+            boites: [[0, -40, 40]], deg: 10, base: 5, ech: 0.1, angle: 50,
+          },
         },
         ondine: {
           nom: 'Ondine', element: 'eau', description: 'Équilibrée, bon retour sur l\'arène',
@@ -162,6 +240,11 @@ MODULES['characters'] = function (module, exports, require) {
             objet: { type: 'zone', style: 'geyser', auSol: true, dx: 110, l: 30, h: 230, vie: 26,
               deg: 9, base: 7, ech: 0.1, angle: 88 },
           },
+          spe3: {
+            nom: 'Tourbillon d\'eau', debut: 6, actif: 14, total: 34, recharge: 80,
+            elan: { vy: -10 }, geste: [0, -80, 0],
+            boites: [[0, -40, 58]], deuxCotes: true, deg: 9, base: 5.5, ech: 0.09, angle: 75,
+          },
         },
         brok: {
           nom: 'Brok', element: 'terre', description: 'Lourd et puissant',
@@ -180,6 +263,11 @@ MODULES['characters'] = function (module, exports, require) {
             nom: 'Séisme', debut: 18, actif: 4, total: 52, recharge: 300, boites: [], geste: [20, -4, 0],
             objet: { type: 'zone', style: 'seisme', auSol: true, dx: 0, l: 190, h: 24, vie: 14,
               deg: 10, base: 6.5, ech: 0.1, angle: 80, deuxCotes: true, auSolSeulement: true },
+          },
+          spe3: {
+            nom: 'Météore', debut: 12, actif: 30, total: 50, recharge: 110, suspend: true,
+            elan: { vx: 0, vy: 17, tenir: true }, geste: [0, 10, 0],
+            boites: [[0, 0, 40]], deg: 14, base: 5, ech: 0.12, angle: -75,
           },
         },
         zephyr: {
@@ -202,6 +290,11 @@ MODULES['characters'] = function (module, exports, require) {
             objet: { type: 'zone', style: 'tornade', dx: 0, l: 46, h: 150, vie: 50, intervalle: 9,
               deg: 2, base: 3.5, ech: 0, angle: 85, sansGel: true },
           },
+          spe3: {
+            nom: 'Cyclone', debut: 4, actif: 30, total: 44, recharge: 90,
+            elan: { vy: -8.5, tenir: true }, geste: [0, -80, 0],
+            boites: [[0, -36, 50]], deuxCotes: true, deg: 8, base: 5, ech: 0.08, angle: 85,
+          },
         },
         zip: {
           nom: 'Zip', element: 'foudre', description: 'Le plus rapide, léger',
@@ -220,6 +313,11 @@ MODULES['characters'] = function (module, exports, require) {
             nom: 'Mine électrique', debut: 10, actif: 4, total: 34, recharge: 360, boites: [], geste: [20, -8, 0],
             objet: { type: 'zone', style: 'mine', dx: 0, l: 34, h: 60, vie: 600, delai: 40,
               declenche: true, unique: true, deg: 9, base: 5.5, ech: 0.1, angle: 80, deuxCotes: true },
+          },
+          spe3: {
+            nom: 'Charge foudroyante', debut: 6, actif: 16, total: 34, recharge: 80, suspend: true,
+            elan: { vx: 16, vy: -1.5, tenir: true }, geste: [40, -34, 0],
+            boites: [[30, -34, 32]], deg: 9, base: 4.5, ech: 0.1, angle: 35,
           },
         },
         givre: {
@@ -240,6 +338,12 @@ MODULES['characters'] = function (module, exports, require) {
             nom: 'Piège de givre', debut: 14, actif: 4, total: 40, recharge: 420, boites: [], geste: [34, -12, 0],
             objet: { type: 'zone', style: 'givre', auSol: true, dx: 80, l: 55, h: 30, vie: 480, delai: 30,
               declenche: true, unique: true, deg: 5, base: 0, ech: 0, angle: 0, fige: 75 },
+          },
+          spe3: {
+            nom: 'Pluie de glace', debut: 8, actif: 16, total: 36, recharge: 100,
+            elan: { vy: -7 }, geste: [20, 10, 0], boites: [],
+            objet: { type: 'projectile', style: 'glacon', rafale: 5, vitesse: 2, vy: 10, g: 0.25, r: 15, vie: 60,
+              dx: 10, dy: 0, deg: 6, base: 3.5, ech: 0.07, angle: -60 },
           },
         },
       };
@@ -283,8 +387,8 @@ MODULES['characters'] = function (module, exports, require) {
        */
       function infosAttaque(joueur) {
         const perso = PERSOS[joueur.perso] || PERSOS.ondine;
-        // « spe1 » et « spe2 » sont les capacités propres au personnage.
-        const special = joueur.atk === 'spe1' || joueur.atk === 'spe2';
+        // « spe1 », « spe2 » et « spe3 » sont les capacités propres au personnage.
+        const special = joueur.atk === 'spe1' || joueur.atk === 'spe2' || joueur.atk === 'spe3';
         const attaque = special ? perso[joueur.atk] : ATTAQUES[joueur.atk];
         if (!attaque) return null;
         const debut = Math.round(attaque.debut * perso.cadence);
@@ -333,7 +437,7 @@ MODULES['physics'] = function (module, exports, require) {
         'dir',                  // sens du regard : 1 = droite, -1 = gauche
         'sol',                  // vrai si le joueur est posé sur une surface
         'sauts',                // sauts aériens restants
-        'etat',                 // 'libre' | 'attaque' | 'charge' | 'bouclier' | 'esquive' | 'sonne' | 'mort'
+        'etat',                 // 'libre' | 'attaque' | 'charge' | 'bouclier' | 'esquive' | 'sonne' | 'bord' | 'mort'
         't',                    // nombre de ticks passés dans l'état courant
         'atk',                  // nom de l'attaque (ou du type d'esquive) en cours
         'charge',               // ticks de charge de l'attaque forte
@@ -348,7 +452,9 @@ MODULES['physics'] = function (module, exports, require) {
         'nAtk',                 // compteur d'attaques lancées
         'sonne',                // ticks restants sans contrôle après un coup
         'elan',                 // compte à rebours avant le décollage
-        'cd1', 'cd2',           // temps de recharge des deux capacités
+        'cd1', 'cd2', 'cd3',    // temps de recharge des trois capacités
+        'airSpe',               // capacité aérienne déjà utilisée depuis le dernier atterrissage
+        'bordCd',               // délai avant de pouvoir se raccrocher à un bord
       ];
 
       /** État de simulation d'un joueur neuf, placé en (x, y). */
@@ -357,7 +463,8 @@ MODULES['physics'] = function (module, exports, require) {
           x, y, vx: 0, vy: 0, dir: 1, sol: false, sauts: 1,
           etat: 'libre', t: 0, atk: '', charge: 0, bouclier: C.BOUCLIER_MAX,
           gel: 0, invul: 0, traverse: 0, prev: 0, course: 0,
-          rapide: false, esqAir: false, nAtk: 0, sonne: 0, elan: 0, cd1: 0, cd2: 0,
+          rapide: false, esqAir: false, nAtk: 0, sonne: 0, elan: 0, cd1: 0, cd2: 0, cd3: 0,
+          airSpe: false, bordCd: 0,
         };
       }
 
@@ -368,10 +475,12 @@ MODULES['physics'] = function (module, exports, require) {
 
       /** Surface sur laquelle le joueur est posé, ou null s'il n'y en a pas. */
       function surfaceSous(p) {
-        if (p.y === C.SOL_Y && p.x >= C.BLOC.x0 - MARGE_BORD && p.x <= C.BLOC.x1 + MARGE_BORD) {
-          return { traversable: false };
+        for (const s of C.carte.sols) {
+          if (p.y === s.y && p.x >= s.x0 - MARGE_BORD && p.x <= s.x1 + MARGE_BORD) {
+            return { traversable: false };
+          }
         }
-        for (const pl of C.PLATEFORMES) {
+        for (const pl of C.carte.plateformes) {
           if (p.y === pl.y && p.x >= pl.x0 - MARGE_BORD && p.x <= pl.x1 + MARGE_BORD) {
             return { traversable: true };
           }
@@ -407,12 +516,21 @@ MODULES['physics'] = function (module, exports, require) {
 
       /**
        * Lance une capacité élémentaire si elle est rechargée.
-       * SPÉCIAL seul = première capacité, BAS + SPÉCIAL = seconde.
+       *   BAS + SPÉCIAL                    : capacité 2
+       *   SPÉCIAL en l'air, ou HAUT + SPÉCIAL : capacité aérienne (une fois par saut)
+       *   SPÉCIAL au sol                   : capacité 1
        */
-      function lancerSpecial(p, bas, axe, S) {
-        const nom = bas ? 'spe2' : 'spe1';
-        const recharge = bas ? 'cd2' : 'cd1';
+      function lancerSpecial(p, bas, haut, axe, S) {
+        let n = 1;
+        if (bas) n = 2;
+        else if (haut || !p.sol) n = 3;
+        const nom = 'spe' + n;
+        const recharge = 'cd' + n;
         if (p[recharge] > 0 || !S[nom]) return false;
+        if (n === 3) {
+          if (p.airSpe) return false;
+          p.airSpe = true;
+        }
         if (axe !== 0) p.dir = axe;
         lancerAttaque(p, nom);
         p[recharge] = S[nom].recharge;
@@ -459,7 +577,7 @@ MODULES['physics'] = function (module, exports, require) {
 
         if (p.sol) {
           // ----- Au sol -----
-          if ((appui & T.SPECIAL) && lancerSpecial(p, bas, axe, S)) return;
+          if ((appui & T.SPECIAL) && lancerSpecial(p, bas, haut, axe, S)) return;
           if (appui & T.ATTRAPE) {
             if (axe !== 0) p.dir = axe;
             lancerAttaque(p, 'attrape');
@@ -529,7 +647,7 @@ MODULES['physics'] = function (module, exports, require) {
         // ----- En l'air -----
         p.elan = 0;
         p.course = 0;
-        if ((appui & T.SPECIAL) && lancerSpecial(p, bas, axe, S)) return;
+        if ((appui & T.SPECIAL) && lancerSpecial(p, bas, haut, axe, S)) return;
         if (appui & (T.LEGER | T.FORT)) {
           if (haut) lancerAttaque(p, 'air_haut');
           else if (bas) lancerAttaque(p, 'air_bas');
@@ -563,13 +681,27 @@ MODULES['physics'] = function (module, exports, require) {
           changerEtat(p, 'libre');
           return;
         }
-        // Certaines capacités donnent une impulsion au lanceur (tornade).
-        if (infos.attaque.elan && p.t === infos.debut + 1) {
-          const e = infos.attaque.elan;
-          if (e.vx !== undefined) p.vx = e.vx * p.dir;
-          if (e.vy !== undefined) { p.vy = e.vy; p.sol = false; p.rapide = false; }
+        const e = infos.attaque.elan;
+        // « suspend » : le joueur reste presque immobile en l'air pendant la préparation.
+        if (infos.attaque.suspend && !p.sol && p.t <= infos.debut) {
+          p.vy = Math.min(p.vy, 0.8);
+          p.vx *= 0.85;
         }
-        if (p.sol) {
+        // Certaines capacités propulsent le lanceur : une fois (« elan »), ou
+        // pendant toute la phase active (« tenir »).
+        const propulse = e && e.tenir && p.t > infos.debut && p.t <= infos.fin;
+        if (e && (p.t === infos.debut + 1 || propulse)) {
+          if (e.vx !== undefined) p.vx = e.vx * p.dir;
+          if (e.vy !== undefined) { p.vy = e.vy; if (e.vy < 0 || !p.sol) p.sol = false; p.rapide = false; }
+        }
+        // Fin de la propulsion : on retrouve sa vitesse normale.
+        if (e && e.tenir && p.t === infos.fin + 1) {
+          if (e.vx !== undefined) p.vx = Math.max(-S.vitAir, Math.min(S.vitAir, p.vx));
+          if (p.vy < -S.saut * 0.5) p.vy = -S.saut * 0.5;
+        }
+        if (propulse) {
+          if (e.vx === undefined) controleAir(p, axe, S, 1);
+        } else if (p.sol) {
           p.vx *= 0.8;
         } else {
           if ((appui & T.BAS) && p.vy > -1) p.rapide = true;
@@ -632,18 +764,104 @@ MODULES['physics'] = function (module, exports, require) {
         p.sauts = S.sautsAir;
         p.rapide = false;
         p.esqAir = false;
+        p.airSpe = false;
         // Une attaque aérienne s'interrompt en touchant le sol.
-        if (p.etat === 'attaque' && p.atk.startsWith('air_')) changerEtat(p, 'libre');
+        if (p.etat === 'attaque' && (p.atk.startsWith('air_') || p.atk === 'spe3')) changerEtat(p, 'libre');
+      }
+
+      // ---------------------------------------------------------------------------
+      // Accroche aux bords
+      // ---------------------------------------------------------------------------
+      /**
+       * En tombant près du bord d'un sol, le joueur s'y accroche automatiquement
+       * (sauf s'il maintient BAS). Il est alors invulnérable un court instant.
+       */
+      function essayerBord(p, S, touches) {
+        if (p.sol || p.bordCd > 0 || (touches & T.BAS)) return;
+        const recuperation = p.etat === 'attaque' && p.atk === 'spe3';
+        if (p.etat !== 'libre' && !recuperation) return;
+        if (p.vy < -2 && !recuperation) return; // on ne s'accroche pas en montant
+
+        for (const s of C.carte.sols) {
+          for (const cote of [-1, 1]) {           // -1 : bord gauche, 1 : bord droit
+            const bx = cote < 0 ? s.x0 : s.x1;
+            const xAccroche = bx + cote * S.l / 2; // centre du joueur suspendu
+            const hautCorps = p.y - S.h;
+            if (Math.abs(p.x - xAccroche) > 42) continue;
+            if (cote * (p.x - bx) < -12) continue; // il est au-dessus de la scène
+            if (hautCorps < s.y - 55 || hautCorps > s.y + 28) continue;
+
+            changerEtat(p, 'bord');
+            p.x = xAccroche;
+            p.y = s.y + S.h - 12; // les mains au niveau du bord
+            p.vx = 0;
+            p.vy = 0;
+            p.dir = -cote;        // il regarde la scène
+            p.sauts = S.sautsAir;
+            p.esqAir = false;
+            p.airSpe = false;
+            p.rapide = false;
+            p.invul = Math.max(p.invul, 40);
+            return;
+          }
+        }
+      }
+
+      /** Remonte du bord sur la scène. */
+      function monter(p, S) {
+        const bx = p.x + p.dir * S.l / 2;  // abscisse du bord
+        p.y = p.y - S.h + 12;              // hauteur du sol
+        p.x = bx + p.dir * (S.l / 2 + 2);
+        p.vx = 0;
+        p.vy = 0;
+        p.sol = true;
+        p.invul = Math.max(p.invul, 8);
+        changerEtat(p, 'libre');
+      }
+
+      function etatBord(p, touches, appui, S) {
+        p.vx = 0;
+        p.vy = 0;
+        if (p.t < 6) return; // petit temps avant de pouvoir agir
+        const versScene = p.dir > 0 ? T.DROITE : T.GAUCHE;
+        const versVide = p.dir > 0 ? T.GAUCHE : T.DROITE;
+
+        if (appui & T.SAUT) {
+          // Saut depuis le bord.
+          changerEtat(p, 'libre');
+          sauter(p, S.saut * 1.05);
+          p.vx = p.dir * 2;
+        } else if (appui & (T.HAUT | versScene)) {
+          monter(p, S);
+        } else if (appui & (T.LEGER | T.FORT)) {
+          monter(p, S);
+          lancerAttaque(p, 'leger_cote');
+        } else if (appui & T.ESQUIVE) {
+          // Roulade vers l'intérieur de la scène.
+          monter(p, S);
+          changerEtat(p, 'esquive');
+          p.atk = 'roulade';
+          p.vx = p.dir * 7.5;
+          p.invul = 16;
+        } else if ((appui & (T.BAS | versVide)) || p.t > 300) {
+          // On lâche (et au bout de 5 secondes, on lâche de toute façon).
+          changerEtat(p, 'libre');
+          p.bordCd = 30;
+        }
       }
 
       function deplacer(p, S) {
+        if (p.etat === 'bord') return; // suspendu : ni gravité ni mouvement
         const yAvant = p.y;
+        const carte = C.carte;
 
         if (p.sol) {
           p.vy = 0;
         } else {
           p.vy += S.gravite;
-          if (p.etat !== 'sonne') {
+          // Ni la vitesse maximale de chute ni la chute rapide ne s'appliquent quand
+          // on est éjecté ou propulsé par une capacité aérienne.
+          if (p.etat !== 'sonne' && !(p.etat === 'attaque' && p.atk === 'spe3')) {
             if (p.rapide && p.vy < S.chuteRapide) p.vy = S.chuteRapide;
             const max = p.rapide ? S.chuteRapide : S.chuteMax;
             if (p.vy > max) p.vy = max;
@@ -658,11 +876,17 @@ MODULES['physics'] = function (module, exports, require) {
           if (!surfaceSous(p)) p.sol = false;
         } else if (p.vy >= 0) {
           // On ne se pose que si l'on arrive PAR LE DESSUS de la surface.
-          const dansBloc = p.x >= C.BLOC.x0 - MARGE_BORD && p.x <= C.BLOC.x1 + MARGE_BORD;
-          if (dansBloc && yAvant <= C.SOL_Y && p.y >= C.SOL_Y) {
-            atterrir(p, C.SOL_Y, S);
-          } else if (p.traverse === 0) {
-            for (const pl of C.PLATEFORMES) {
+          let pose = false;
+          for (const s of carte.sols) {
+            const dessus = p.x >= s.x0 - MARGE_BORD && p.x <= s.x1 + MARGE_BORD;
+            if (dessus && yAvant <= s.y && p.y >= s.y) {
+              atterrir(p, s.y, S);
+              pose = true;
+              break;
+            }
+          }
+          if (!pose && p.traverse === 0) {
+            for (const pl of carte.plateformes) {
               const dessus = p.x >= pl.x0 - MARGE_BORD && p.x <= pl.x1 + MARGE_BORD;
               if (dessus && yAvant <= pl.y && p.y >= pl.y) {
                 atterrir(p, pl.y, S);
@@ -672,13 +896,21 @@ MODULES['physics'] = function (module, exports, require) {
           }
         }
 
-        // Murs du bloc principal : si les pieds sont sous le niveau du sol et que
-        // le corps entre dans le bloc, on le repousse du côté le plus proche.
+        // Murs et plafonds des sols : si le corps entre dans un bloc plein sans
+        // venir du dessus, on le repousse.
         const demi = S.l / 2;
-        if (p.y > C.SOL_Y + 1 && p.x > C.BLOC.x0 - demi && p.x < C.BLOC.x1 + demi) {
-          const milieu = (C.BLOC.x0 + C.BLOC.x1) / 2;
-          p.x = p.x < milieu ? C.BLOC.x0 - demi : C.BLOC.x1 + demi;
-          p.vx = 0;
+        for (const s of carte.sols) {
+          const bas = s.bas === undefined ? 2000 : s.bas;
+          if (p.x <= s.x0 - demi || p.x >= s.x1 + demi) continue;
+          if (p.y <= s.y + 1 || p.y - S.h >= bas) continue;
+          if (yAvant - S.h >= bas - 1) {
+            // Il arrive par en dessous : il se cogne la tête.
+            p.y = bas + S.h;
+            if (p.vy < 0) p.vy = 0;
+          } else {
+            p.x = p.x < (s.x0 + s.x1) / 2 ? s.x0 - demi : s.x1 + demi;
+            p.vx = 0;
+          }
         }
       }
 
@@ -707,6 +939,8 @@ MODULES['physics'] = function (module, exports, require) {
         if (p.traverse > 0) p.traverse--;
         if (p.cd1 > 0) p.cd1--;
         if (p.cd2 > 0) p.cd2--;
+        if (p.cd3 > 0) p.cd3--;
+        if (p.bordCd > 0) p.bordCd--;
         if (p.etat !== 'bouclier' && p.bouclier < C.BOUCLIER_MAX) {
           p.bouclier = Math.min(C.BOUCLIER_MAX, p.bouclier + 0.15);
         }
@@ -717,10 +951,12 @@ MODULES['physics'] = function (module, exports, require) {
           case 'bouclier': etatBouclier(p, touches, appui, axe); break;
           case 'esquive': etatEsquive(p); break;
           case 'sonne': etatSonne(p); break;
+          case 'bord': etatBord(p, touches, appui, S); break;
           default: etatLibre(p, touches, appui, axe, S);
         }
 
         deplacer(p, S);
+        essayerBord(p, S, touches);
       }
 
       const physics = { CHAMPS, nouvelEtat, avancerJoueur, briserBouclier, changerEtat };
@@ -930,7 +1166,7 @@ MODULES['combat'] = function (module, exports, require) {
      */
     function gererSorties(joueurs, evenements) {
       const prets = [];
-      const Z = C.SORTIE;
+      const Z = C.carte.sortie;
       for (const p of joueurs) {
         if (p.etat === 'mort') {
           if (p.retour > 0) p.retour--;
@@ -962,7 +1198,7 @@ MODULES['combat'] = function (module, exports, require) {
       p.brulure = 0;
       p.sauts = (PERSOS[p.perso] || PERSOS.ondine).sautsAir;
       p.invul = 120;
-      p.dir = x < (C.BLOC.x0 + C.BLOC.x1) / 2 ? 1 : -1;
+      p.dir = x < C.carte.centre ? 1 : -1;
     }
 
     module.exports = { cercleToucheCorps, resoudreCoups, frapper, effetsContinus, gererSorties, reapparaitre };
@@ -1018,7 +1254,10 @@ MODULES['capacites'] = function (module, exports, require) {
       }
       // « auSol » : la zone se pose sur le sol sous le joueur.
       let y = p.y;
-      if (o.auSol && !p.sol && x >= C.BLOC.x0 && x <= C.BLOC.x1 && p.y < C.SOL_Y) y = C.SOL_Y;
+      if (o.auSol && !p.sol) {
+        const sol = C.carte.sols.find((s) => x >= s.x0 && x <= s.x1 && p.y < s.y);
+        if (sol) y = sol.y;
+      }
       objets.push({
         ...commun, type: 'z',
         x, y, l: o.l, h: o.h,
@@ -1030,7 +1269,7 @@ MODULES['capacites'] = function (module, exports, require) {
     /** Les joueurs qui lancent une capacité font apparaître leur objet. */
     function lancer(objets, joueurs) {
       for (const p of joueurs) {
-        if (p.etat !== 'attaque' || (p.atk !== 'spe1' && p.atk !== 'spe2')) continue;
+        if (p.etat !== 'attaque' || !p.atk.startsWith('spe')) continue;
         const infos = infosAttaque(p);
         const o = infos && infos.attaque.objet;
         if (!o || p.t <= infos.debut) continue;
@@ -1071,10 +1310,14 @@ MODULES['capacites'] = function (module, exports, require) {
         if (!o.def.perce) { o.vie = 0; return; } // un projectile perçant continue sa route
       }
 
-      // Le projectile s'écrase contre le bloc principal.
-      if (o.x > C.BLOC.x0 && o.x < C.BLOC.x1 && o.y + o.r * 0.5 > C.SOL_Y) {
-        o.vie = 0;
-        evenements.push({ t: 'eclat', x: Math.round(o.x), y: C.SOL_Y, el: o.element });
+      // Le projectile s'écrase contre les sols.
+      for (const s of C.carte.sols) {
+        const bas = s.bas === undefined ? 2000 : s.bas;
+        if (o.x > s.x0 && o.x < s.x1 && o.y + o.r * 0.5 > s.y && o.y - o.r < bas) {
+          o.vie = 0;
+          evenements.push({ t: 'eclat', x: Math.round(o.x), y: s.y, el: o.element });
+          return;
+        }
       }
     }
 
@@ -1150,8 +1393,8 @@ const PAGE_WEB = `<!DOCTYPE html>
   html, body {
     margin: 0;
     height: 100%;
-    background: #05060d;
-    color: #cfd8ff;
+    background: #101018;
+    color: #f2f2f7;
     font-family: "Trebuchet MS", "Segoe UI", Verdana, sans-serif;
     overflow: hidden;
   }
@@ -1164,8 +1407,8 @@ const PAGE_WEB = `<!DOCTYPE html>
   }
   canvas {
     display: block;
-    background: #090b17;
-    box-shadow: 0 0 40px rgba(0, 229, 255, 0.25);
+    background: #000;
+    border-radius: 6px;
   }
   #bandeau {
     position: fixed;
@@ -1173,10 +1416,10 @@ const PAGE_WEB = `<!DOCTYPE html>
     left: 14px;
     font-size: 14px;
     letter-spacing: 0.04em;
-    text-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+    text-shadow: 0 1px 3px #000, 0 0 2px #000;
     pointer-events: none;
   }
-  #bandeau b { color: #00e5ff; }
+  #bandeau b { color: #ffd23f; }
   #touches {
     position: fixed;
     top: 8px;
@@ -1184,7 +1427,8 @@ const PAGE_WEB = `<!DOCTYPE html>
     text-align: right;
     font-size: 12px;
     line-height: 1.9;
-    opacity: 0.8;
+    opacity: 0.9;
+    text-shadow: 0 1px 3px #000, 0 0 2px #000;
     pointer-events: none;
   }
   #touches span { margin-left: 12px; white-space: nowrap; }
@@ -1192,10 +1436,11 @@ const PAGE_WEB = `<!DOCTYPE html>
     display: inline-block;
     min-width: 1.1em;
     padding: 0 5px;
-    border: 1px solid #3b4a8a;
+    border: 1px solid #555;
+    border-bottom-width: 2px;
     border-radius: 4px;
-    background: #10142b;
-    color: #fff;
+    background: #f2f2f7;
+    color: #1d1a26;
     font-family: inherit;
     font-size: 11px;
     text-align: center;
@@ -1221,9 +1466,11 @@ const PAGE_WEB = `<!DOCTYPE html>
     <span>Attrape (perce le bouclier) <kbd>U</kbd> / <kbd>X</kbd></span>
     <span>Capacité 1 <kbd>I</kbd> / <kbd>F</kbd></span>
     <span>Capacité 2 <kbd>↓</kbd> + <kbd>I</kbd></span>
+    <span>Capacité aérienne <kbd>I</kbd> en l'air</span>
   </div>
   <div>
     <span>Personnage : <kbd>1</kbd> Braise · <kbd>2</kbd> Ondine · <kbd>3</kbd> Brok · <kbd>4</kbd> Zéphyr · <kbd>5</kbd> Zip · <kbd>6</kbd> Givre</span>
+    <span>Carte suivante <kbd>Tab</kbd></span>
   </div>
 </div>
 
@@ -1381,6 +1628,11 @@ const PAGE_WEB = `<!DOCTYPE html>
       enfoncees.add(e.code);
       appuisBrefs |= TOUCHES[e.code];
       e.preventDefault(); // empêche les flèches / Espace de faire défiler la page
+    } else if (!enLocal && e.code === 'Tab' && !e.repeat) {
+      // Carte suivante (pour tout le monde).
+      e.preventDefault();
+      const ids = Object.keys(C.CARTES);
+      envoyer({ t: 'carte', id: ids[(ids.indexOf(C.carte.id) + 1) % ids.length] });
     } else if (!enLocal && e.code in CHOIX_PERSO && !e.repeat) {
       envoyer({ t: 'perso', perso: CHOIX_PERSO[e.code] });
     }
@@ -1482,13 +1734,18 @@ const PAGE_WEB = `<!DOCTYPE html>
     }
     for (const ev of etat.ev) jouerEvenement(ev, carte);
     objets = etat.objets || [];
+    // Le serveur a changé de carte : on la charge et on redessine le décor.
+    if (etat.carte && etat.carte !== carteDessinee) {
+      if (etat.carte !== C.carte.id) C.choisirCarte(etat.carte);
+      dessinerFond();
+    }
     tempsObjets = performance.now();
 
     historique.push({ temps: performance.now(), joueurs: carte });
     if (historique.length > 30) historique.shift();
 
     const humains = etat.joueurs.filter((j) => j.nom !== 'Mannequin').length;
-    elStatut.textContent = enLocal ? 'partie locale' : 'arène libre · ' + humains + ' joueur(s) en ligne';
+    elStatut.textContent = (enLocal ? 'partie locale' : 'arène libre · ' + humains + ' joueur(s) en ligne') + ' · ' + C.carte.nom;
 
     // --- Réconciliation du joueur local ---
     const officiel = carte.get(monId);
@@ -1656,101 +1913,856 @@ const PAGE_WEB = `<!DOCTYPE html>
   }
 
   // ===========================================================================
-  // DÉCOR — dessiné une seule fois dans une image, puis recopié à chaque frame
+  // DÉCORS — chaque carte a son paysage. La partie fixe est dessinée une seule
+  // fois dans une image (« fond ») ; une petite partie animée (nuages, lave,
+  // vagues, neige…) est redessinée à chaque image.
+  // Tout est dessiné en coordonnées du monde (mêmes unités que la physique).
   // ===========================================================================
   const fond = document.createElement('canvas');
   fond.width = C.LARGEUR;
   fond.height = C.HAUTEUR;
+  const MONDE = { x0: -170, x1: 1450, y0: -60, y1: 860 }; // zone visible par la caméra
+  const CONTOUR = '#1d1a26';                               // couleur des contours
 
-  function dessinerFond() {
-    const f = fond.getContext('2d');
+  /** Générateur pseudo-aléatoire : les décors sont toujours identiques. */
+  function aleaGraine(graine) {
+    return () => { graine = (graine * 16807) % 2147483647; return graine / 2147483647; };
+  }
 
-    // Ciel.
-    const ciel = f.createLinearGradient(0, 0, 0, C.HAUTEUR);
-    ciel.addColorStop(0, '#060714');
-    ciel.addColorStop(0.6, '#0d1030');
-    ciel.addColorStop(1, '#1b0d33');
-    f.fillStyle = ciel;
-    f.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
+  function degradeV(f, y0, y1, arrets) {
+    const d = f.createLinearGradient(0, y0, 0, y1);
+    for (const [k, c] of arrets) d.addColorStop(k, c);
+    return d;
+  }
 
-    // Étoiles (positions pseudo-aléatoires mais toujours les mêmes).
-    let graine = 7;
-    const alea = () => { graine = (graine * 16807) % 2147483647; return graine / 2147483647; };
-    for (let i = 0; i < 110; i++) {
-      f.fillStyle = 'rgba(190, 210, 255,' + (0.15 + alea() * 0.5) + ')';
-      const taille = alea() < 0.85 ? 1.2 : 2.2;
-      f.fillRect(alea() * C.LARGEUR, alea() * C.HAUTEUR * 0.8, taille, taille);
-    }
+  function remplirCiel(f, arrets) {
+    f.fillStyle = degradeV(f, MONDE.y0, MONDE.y1, arrets);
+    f.fillRect(MONDE.x0, MONDE.y0, MONDE.x1 - MONDE.x0, MONDE.y1 - MONDE.y0);
+  }
 
-    // Grille en perspective au loin.
-    f.strokeStyle = 'rgba(255, 43, 214, 0.13)';
-    f.lineWidth = 1;
+  function disque(f, x, y, r, couleur) {
+    f.fillStyle = couleur;
     f.beginPath();
-    for (let i = -12; i <= 12; i++) {
-      f.moveTo(640 + i * 30, 500);
-      f.lineTo(640 + i * 150, C.HAUTEUR);
-    }
-    for (let y = 500, pas = 8; y < C.HAUTEUR; y += pas, pas *= 1.35) {
-      f.moveTo(0, y);
-      f.lineTo(C.LARGEUR, y);
-    }
-    f.stroke();
+    f.arc(x, y, r, 0, Math.PI * 2);
+    f.fill();
+  }
 
-    // --- À partir d'ici, coordonnées du monde ---
-    f.setTransform(ZOOM, 0, 0, ZOOM, CAM_X, CAM_Y);
+  /** Halo lumineux doux (soleil, lune, lueur de lave…). */
+  function halo(f, x, y, r, couleur) {
+    const d = f.createRadialGradient(x, y, 0, x, y, r);
+    d.addColorStop(0, couleur);
+    d.addColorStop(1, 'rgba(0,0,0,0)');
+    f.fillStyle = d;
+    f.fillRect(x - r, y - r, r * 2, r * 2);
+  }
 
-    // Bloc principal.
-    const { x0, x1 } = C.BLOC;
-    const corps = f.createLinearGradient(0, C.SOL_Y, 0, C.SOL_Y + 340);
-    corps.addColorStop(0, '#1a2152');
-    corps.addColorStop(1, '#070817');
-    f.fillStyle = corps;
-    f.fillRect(x0, C.SOL_Y, x1 - x0, 400);
-    f.strokeStyle = 'rgba(0, 229, 255, 0.12)';
+  function nuage(f, x, y, s, couleur) {
+    f.fillStyle = couleur;
     f.beginPath();
-    for (let x = x0 + 80; x < x1; x += 80) { f.moveTo(x, C.SOL_Y); f.lineTo(x, C.SOL_Y + 400); }
-    f.stroke();
+    for (const [dx, dy, r] of [[0, 0, 30], [30, -16, 28], [62, -4, 30], [34, 10, 28], [-28, 8, 22], [90, 10, 20]]) {
+      f.moveTo(x + dx * s + r * s, y + dy * s);
+      f.arc(x + dx * s, y + dy * s, r * s, 0, Math.PI * 2);
+    }
+    f.fill();
+  }
 
-    f.shadowColor = '#00e5ff';
-    f.shadowBlur = 20;
-    f.strokeStyle = '#00e5ff';
-    f.lineWidth = 4;
+  /**
+   * Une ligne de collines (douces) ou de montagnes (pointues) qui couvre toute
+   * la largeur. Renvoie les sommets, pour y ajouter des détails.
+   */
+  function relief(f, alea, y, amplitude, pas, couleur, pointu) {
+    const pts = [];
+    for (let x = MONDE.x0 - pas; x <= MONDE.x1 + pas; x += pas * (0.7 + alea() * 0.6)) {
+      const k = pointu ? (pts.length % 2 ? 0.2 : 1) : 0.4 + 0.6 * alea();
+      pts.push([x, y - amplitude * k * (0.6 + alea() * 0.4)]);
+    }
+    f.fillStyle = couleur;
     f.beginPath();
-    f.moveTo(x0, C.SOL_Y + 400);
-    f.lineTo(x0, C.SOL_Y);
-    f.lineTo(x1, C.SOL_Y);
-    f.lineTo(x1, C.SOL_Y + 400);
-    f.stroke();
+    f.moveTo(pts[0][0], MONDE.y1);
+    f.lineTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) {
+      if (pointu) {
+        f.lineTo(pts[i][0], pts[i][1]);
+      } else {
+        const mx = (pts[i - 1][0] + pts[i][0]) / 2;
+        const my = (pts[i - 1][1] + pts[i][1]) / 2;
+        f.quadraticCurveTo(pts[i - 1][0], pts[i - 1][1], mx, my);
+      }
+    }
+    f.lineTo(pts[pts.length - 1][0], MONDE.y1);
+    f.closePath();
+    f.fill();
+    return pts;
+  }
 
-    // Plateformes flottantes.
-    f.shadowColor = '#ff2bd6';
-    f.strokeStyle = '#ff2bd6';
-    f.lineWidth = 5;
-    f.lineCap = 'round';
-    for (const pl of C.PLATEFORMES) {
+  function arbre(f, x, y, s, feuillage, ombre) {
+    f.fillStyle = '#6b4a2b';
+    f.fillRect(x - 5 * s, y - 40 * s, 10 * s, 40 * s);
+    f.fillStyle = feuillage;
+    f.beginPath();
+    for (const [dx, dy, r] of [[0, -62, 26], [-20, -46, 20], [20, -46, 20], [0, -40, 22]]) {
+      f.moveTo(x + dx * s + r * s, y + dy * s);
+      f.arc(x + dx * s, y + dy * s, r * s, 0, Math.PI * 2);
+    }
+    f.fill();
+    f.fillStyle = ombre;
+    f.beginPath();
+    f.arc(x + 10 * s, y - 40 * s, 16 * s, 0, Math.PI * 2);
+    f.fill();
+  }
+
+  function sapin(f, x, y, s, couleur, neige) {
+    f.fillStyle = '#4a3526';
+    f.fillRect(x - 4 * s, y - 14 * s, 8 * s, 14 * s);
+    for (let i = 0; i < 3; i++) {
+      const base = y - 10 * s - i * 22 * s;
+      const largeur = (30 - i * 7) * s;
+      f.fillStyle = couleur;
       f.beginPath();
-      f.moveTo(pl.x0, pl.y + 2);
-      f.lineTo(pl.x1, pl.y + 2);
+      f.moveTo(x - largeur, base);
+      f.lineTo(x, base - 36 * s);
+      f.lineTo(x + largeur, base);
+      f.closePath();
+      f.fill();
+      if (neige) {
+        f.fillStyle = neige;
+        f.beginPath();
+        f.moveTo(x - largeur * 0.45, base - 20 * s);
+        f.lineTo(x, base - 36 * s);
+        f.lineTo(x + largeur * 0.45, base - 20 * s);
+        f.closePath();
+        f.fill();
+      }
+    }
+  }
+
+  function palmier(f, x, y, s, penche) {
+    f.strokeStyle = CONTOUR;
+    f.lineWidth = 3;
+    // Tronc courbé, fait de segments.
+    let px = x;
+    let py = y;
+    for (let i = 0; i < 7; i++) {
+      const nx = px + penche * 5 * s;
+      const ny = py - 22 * s;
+      f.fillStyle = i % 2 ? '#a5753f' : '#8c5f30';
+      f.beginPath();
+      f.moveTo(px - 8 * s, py);
+      f.lineTo(nx - 7 * s, ny);
+      f.lineTo(nx + 7 * s, ny);
+      f.lineTo(px + 8 * s, py);
+      f.closePath();
+      f.fill();
+      f.stroke();
+      px = nx;
+      py = ny;
+    }
+    // Feuilles.
+    for (const a of [-2.7, -2.1, -1.5, -0.9, -0.35, 0.2, -3.2]) {
+      f.fillStyle = '#3e9b45';
+      f.beginPath();
+      f.moveTo(px, py);
+      const ex = px + Math.cos(a) * 75 * s;
+      const ey = py + Math.sin(a) * 40 * s + 22 * s;
+      f.quadraticCurveTo(px + Math.cos(a) * 40 * s, py + Math.sin(a) * 50 * s - 10 * s, ex, ey);
+      f.quadraticCurveTo(px + Math.cos(a) * 40 * s, py + Math.sin(a) * 30 * s + 6 * s, px, py);
+      f.fill();
       f.stroke();
     }
+    disque(f, px - 6 * s, py + 6 * s, 6 * s, '#6b4a2b');
+    disque(f, px + 6 * s, py + 8 * s, 6 * s, '#6b4a2b');
+  }
+
+  /**
+   * Un sol (bloc plein) : un corps qui s'effile vers le bas, et une couche de
+   * dessus (herbe, neige, sable, dallage…).
+   *   st.corps   : [couleur du haut, couleur du bas]
+   *   st.dessus  : couleur de la couche du dessus, st.epaisseur : son épaisseur
+   *   st.pointe  : profondeur de la pointe sous le bloc (0 = bloc droit)
+   *   st.motif   : fonction de détails (f, s)
+   */
+  function dessinerSol(f, s, st) {
+    const bas = Math.min(s.bas === undefined ? 900 : s.bas, 900);
+    const alea = aleaGraine(Math.round(s.x0 * 7 + s.y));
+    f.lineJoin = 'round';
+    f.lineCap = 'round';
+    f.lineWidth = 4;
+    f.strokeStyle = CONTOUR;
+
+    // Corps.
+    f.beginPath();
+    f.moveTo(s.x0, s.y + 4);
+    f.lineTo(s.x1, s.y + 4);
+    f.lineTo(s.x1 - 6, bas);
+    if (st.pointe) {
+      const n = 8;
+      for (let i = 1; i < n; i++) {
+        const k = i / n;
+        const x = s.x1 - 6 - (s.x1 - s.x0 - 12) * k;
+        const profondeur = Math.sin(k * Math.PI) * st.pointe * (0.75 + 0.25 * alea());
+        f.lineTo(x, bas + profondeur);
+      }
+    }
+    f.lineTo(s.x0 + 6, bas);
+    f.closePath();
+    f.fillStyle = degradeV(f, s.y, bas + (st.pointe || 0), [[0, st.corps[0]], [1, st.corps[1]]]);
+    f.fill();
+    f.stroke();
+
+    if (st.motif) {
+      f.save();
+      f.clip();
+      st.motif(f, s, bas, alea);
+      f.restore();
+    }
+
+    // Couche du dessus, avec un bord inférieur ondulé.
+    const ep = st.epaisseur || 18;
+    f.beginPath();
+    f.moveTo(s.x0 - 6, s.y + 6);
+    f.quadraticCurveTo(s.x0 - 6, s.y - 2, s.x0 + 4, s.y - 2);
+    f.lineTo(s.x1 - 4, s.y - 2);
+    f.quadraticCurveTo(s.x1 + 6, s.y - 2, s.x1 + 6, s.y + 6);
+    for (let x = s.x1 + 6; x >= s.x0 - 6; x -= 20) {
+      f.lineTo(x, s.y + ep + (st.ondule ? Math.sin(x * 0.11) * 5 + 4 : 0));
+    }
+    f.closePath();
+    f.fillStyle = st.dessus;
+    f.fill();
+    f.stroke();
+    // Reflet clair sur le dessus.
+    f.strokeStyle = st.reflet || 'rgba(255,255,255,0.35)';
+    f.lineWidth = 3;
+    f.beginPath();
+    f.moveTo(s.x0 + 8, s.y + 3);
+    f.lineTo(s.x1 - 8, s.y + 3);
+    f.stroke();
+    if (st.dessusMotif) st.dessusMotif(f, s, alea);
+  }
+
+  /** Une plateforme fine, traversable. */
+  function dessinerPlateforme(f, pl, st) {
+    const ep = st.epaisseur || 14;
+    f.lineJoin = 'round';
+    f.lineWidth = 3.5;
+    f.strokeStyle = CONTOUR;
+    f.fillStyle = st.corps;
+    f.beginPath();
+    f.roundRect(pl.x0 - 4, pl.y - 1, pl.x1 - pl.x0 + 8, ep, 6);
+    f.fill();
+    f.stroke();
+    f.fillStyle = st.dessus;
+    f.beginPath();
+    f.roundRect(pl.x0 - 4, pl.y - 1, pl.x1 - pl.x0 + 8, ep * 0.45, [6, 6, 0, 0]);
+    f.fill();
+    f.stroke();
+    if (st.motif) st.motif(f, pl, ep);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Les six décors
+  // ---------------------------------------------------------------------------
+  const DECORS = {
+    // ----- Prairie : ciel bleu, collines, île flottante herbeuse -----
+    prairie: {
+      fond(f) {
+        const alea = aleaGraine(11);
+        remplirCiel(f, [[0, '#4fa8ec'], [0.55, '#a3d8f7'], [1, '#e6f6ff']]);
+        halo(f, 1230, 60, 220, 'rgba(255,250,210,0.85)');
+        disque(f, 1230, 60, 52, '#fff7cf');
+        for (const [x, y, s] of [[40, 70, 1.3], [430, 20, 0.9], [830, 120, 1.1]]) nuage(f, x, y, s, '#ffffff');
+        relief(f, alea, 560, 190, 260, '#b4dcc0', false);
+        relief(f, alea, 650, 160, 210, '#86c777', false);
+        for (let i = 0; i < 10; i++) {
+          const x = MONDE.x0 + 60 + i * 175 + alea() * 70;
+          arbre(f, x, 650 + alea() * 50, 0.8 + alea() * 0.5, '#4f9f3c', 'rgba(0,0,0,0.12)');
+        }
+        f.fillStyle = '#5aa448';
+        f.fillRect(MONDE.x0, 740, MONDE.x1 - MONDE.x0, 200);
+      },
+      sol: {
+        corps: ['#a8743f', '#5f3c1f'], dessus: '#66c23f', epaisseur: 22, ondule: true, pointe: 140,
+        motif(f, s, bas, alea) {
+          // Cailloux dans la terre.
+          for (let i = 0; i < 26; i++) {
+            const x = s.x0 + alea() * (s.x1 - s.x0);
+            const y = s.y + 34 + alea() * (bas - s.y + 60);
+            f.fillStyle = alea() < 0.5 ? 'rgba(0,0,0,0.16)' : 'rgba(255,255,255,0.12)';
+            f.beginPath();
+            f.ellipse(x, y, 6 + alea() * 10, 4 + alea() * 5, 0, 0, Math.PI * 2);
+            f.fill();
+          }
+        },
+        dessusMotif(f, s, alea) {
+          // Brins d'herbe et fleurs.
+          f.lineWidth = 2;
+          f.strokeStyle = '#3f8f2a';
+          for (let x = s.x0; x < s.x1; x += 9) {
+            f.beginPath();
+            f.moveTo(x, s.y - 1);
+            f.lineTo(x + 2, s.y - 6 - alea() * 6);
+            f.stroke();
+          }
+          for (let i = 0; i < 14; i++) {
+            const x = s.x0 + 20 + alea() * (s.x1 - s.x0 - 40);
+            disque(f, x, s.y - 5, 3.5, ['#ffffff', '#ffe14a', '#ff7aa8'][i % 3]);
+          }
+        },
+      },
+      plateforme: { corps: '#8a5c32', dessus: '#66c23f', epaisseur: 16 },
+      anim(f, t) {
+        // Nuages qui dérivent lentement.
+        for (const [y, s, v, d] of [[200, 0.8, 0.012, 0], [40, 1.0, 0.008, 700], [300, 0.6, 0.016, 1200]]) {
+          const x = MONDE.x0 - 200 + ((t * v + d) % (MONDE.x1 - MONDE.x0 + 400));
+          nuage(f, x, y, s, 'rgba(255,255,255,0.75)');
+        }
+      },
+    },
+
+    // ----- Volcan : ciel rouge, volcan en éruption, mer de lave -----
+    volcan: {
+      fond(f) {
+        const alea = aleaGraine(23);
+        remplirCiel(f, [[0, '#1d0b12'], [0.45, '#5a1a17'], [0.8, '#b8401c'], [1, '#f07a2a']]);
+        // Le volcan au loin, son panache de fumée et ses coulées.
+        f.fillStyle = '#2b1416';
+        f.beginPath();
+        f.moveTo(260, 760);
+        f.lineTo(560, 150);
+        f.lineTo(700, 150);
+        f.lineTo(1040, 760);
+        f.closePath();
+        f.fill();
+        for (let i = 0; i < 9; i++) {
+          disque(f, 630 + (alea() - 0.3) * 90 * (i / 3), 120 - i * 26, 40 + i * 9, 'rgba(70,55,55,' + (0.75 - i * 0.06) + ')');
+        }
+        halo(f, 630, 150, 120, 'rgba(255,140,40,0.9)');
+        f.strokeStyle = '#ff7a1c';
+        f.lineWidth = 6;
+        f.lineCap = 'round';
+        for (const [x0, x1] of [[590, 470], [650, 760], [620, 640]]) {
+          f.beginPath();
+          f.moveTo(x0, 155);
+          f.quadraticCurveTo((x0 + x1) / 2 + 30, 420, x1, 700);
+          f.stroke();
+        }
+        relief(f, alea, 700, 160, 150, '#3a1c1c', true);
+        relief(f, alea, 760, 90, 110, '#241012', true);
+        halo(f, 640, 900, 700, 'rgba(255,110,30,0.55)');
+      },
+      sol: {
+        corps: ['#4a3b3a', '#1e1617'], dessus: '#6a5450', epaisseur: 16, pointe: 110, reflet: 'rgba(255,190,150,0.25)',
+        motif(f, s, bas, alea) {
+          // Fissures où rougeoie la lave.
+          f.strokeStyle = '#ff7a1c';
+          f.lineWidth = 3;
+          for (let i = 0; i < 6; i++) {
+            let x = s.x0 + 30 + alea() * (s.x1 - s.x0 - 60);
+            let y = s.y + 24;
+            f.beginPath();
+            f.moveTo(x, y);
+            for (let k = 0; k < 4; k++) { x += (alea() - 0.5) * 40; y += 20 + alea() * 30; f.lineTo(x, y); }
+            f.stroke();
+          }
+        },
+      },
+      plateforme: {
+        corps: '#6a5652', dessus: '#b0948c', epaisseur: 16,
+        motif(f, pl, ep) {
+          f.strokeStyle = '#ff7a1c';
+          f.lineWidth = 2;
+          f.beginPath();
+          f.moveTo(pl.x0 + 30, pl.y + ep - 3);
+          f.lineTo(pl.x0 + 50, pl.y + ep * 0.6);
+          f.lineTo(pl.x0 + 75, pl.y + ep - 2);
+          f.stroke();
+        },
+      },
+      anim(f, t) {
+        // Mer de lave qui ondule.
+        f.fillStyle = degradeV(f, 760, 860, [[0, '#ffb02a'], [0.3, '#ff6a14'], [1, '#a8200c']]);
+        f.beginPath();
+        f.moveTo(MONDE.x0, MONDE.y1);
+        for (let x = MONDE.x0; x <= MONDE.x1; x += 30) {
+          f.lineTo(x, 770 + Math.sin(x * 0.02 + t * 0.002) * 8 + Math.sin(x * 0.05 - t * 0.003) * 4);
+        }
+        f.lineTo(MONDE.x1, MONDE.y1);
+        f.closePath();
+        f.fill();
+        // Bulles et braises qui montent.
+        for (let i = 0; i < 18; i++) {
+          const cycle = (t * 0.0004 + i * 0.137) % 1;
+          const x = MONDE.x0 + ((i * 397) % (MONDE.x1 - MONDE.x0));
+          const y = 780 - cycle * 700;
+          f.globalAlpha = 1 - cycle;
+          disque(f, x + Math.sin(cycle * 12 + i) * 18, y, 2.5, '#ffb347');
+        }
+        f.globalAlpha = 1;
+      },
+    },
+
+    // ----- Plage : coucher de soleil sur la mer, île de sable -----
+    plage: {
+      fond(f) {
+        const alea = aleaGraine(5);
+        remplirCiel(f, [[0, '#3c4fa8'], [0.35, '#b46aa0'], [0.62, '#ff9a6a'], [0.7, '#ffd27a'], [1, '#ffd27a']]);
+        halo(f, 640, 560, 330, 'rgba(255,220,140,0.8)');
+        disque(f, 640, 560, 90, '#ffe9a8');
+        for (const [x, y, s] of [[80, 120, 1.1], [1100, 70, 1.3], [500, 200, 0.7]]) nuage(f, x, y, s, 'rgba(255,190,170,0.75)');
+        // Îles lointaines.
+        f.fillStyle = '#7a4a6a';
+        f.beginPath();
+        f.ellipse(80, 575, 230, 50, 0, Math.PI, 0);
+        f.ellipse(1260, 575, 180, 38, 0, Math.PI, 0);
+        f.fill();
+        // La mer et le reflet du soleil.
+        f.fillStyle = degradeV(f, 570, 860, [[0, '#3f7fbf'], [1, '#173a6a']]);
+        f.fillRect(MONDE.x0, 570, MONDE.x1 - MONDE.x0, 300);
+        f.fillStyle = 'rgba(255,225,150,0.7)';
+        for (let i = 0; i < 14; i++) {
+          const y = 580 + i * 14;
+          const l = 120 - i * 6 + alea() * 40;
+          f.fillRect(640 - l / 2 + (alea() - 0.5) * 30, y, l, 3);
+        }
+      },
+      sol: {
+        corps: ['#c99a5c', '#7a6455'], dessus: '#f4d58e', epaisseur: 20, ondule: true, pointe: 90,
+        motif(f, s, bas, alea) {
+          for (let i = 0; i < 30; i++) {
+            disque(f, s.x0 + alea() * (s.x1 - s.x0), s.y + 30 + alea() * 140, 2 + alea() * 4, 'rgba(90,60,30,0.25)');
+          }
+        },
+        dessusMotif(f, s) {
+          // Coquillages et étoile de mer.
+          disque(f, s.x0 + 120, s.y - 3, 5, '#ffffff');
+          disque(f, s.x1 - 160, s.y - 3, 4, '#ffd0e0');
+          f.fillStyle = '#ff7a5a';
+          f.beginPath();
+          for (let i = 0; i < 10; i++) {
+            const a = -Math.PI / 2 + (i * Math.PI) / 5;
+            const r = i % 2 ? 4 : 10;
+            f.lineTo(s.x0 + 260 + Math.cos(a) * r, s.y - 6 + Math.sin(a) * r * 0.6);
+          }
+          f.fill();
+        },
+      },
+      plateforme: {
+        corps: '#9a6b3d', dessus: '#c08a52', epaisseur: 14,
+        motif(f, pl, ep) {
+          // Planches de bois.
+          f.strokeStyle = CONTOUR;
+          f.lineWidth = 2;
+          for (let x = pl.x0 + 30; x < pl.x1; x += 34) {
+            f.beginPath();
+            f.moveTo(x, pl.y);
+            f.lineTo(x, pl.y + ep - 2);
+            f.stroke();
+          }
+        },
+      },
+      decoration(f) {
+        // Palmiers aux deux bouts de l'île (purement décoratifs, derrière les joueurs).
+        palmier(f, 340, 500, 1, 1);
+        palmier(f, 935, 500, 0.85, -1);
+      },
+      anim(f, t) {
+        // Vagues au pied de l'île.
+        for (let k = 0; k < 3; k++) {
+          f.strokeStyle = 'rgba(255,255,255,' + (0.55 - k * 0.15) + ')';
+          f.lineWidth = 3;
+          f.beginPath();
+          for (let x = MONDE.x0; x <= MONDE.x1; x += 20) {
+            const y = 640 + k * 50 + Math.sin(x * 0.03 + t * 0.002 + k) * 5;
+            if (x === MONDE.x0) f.moveTo(x, y); else f.lineTo(x, y);
+          }
+          f.stroke();
+        }
+        // Mouettes.
+        f.strokeStyle = '#3a2a3a';
+        f.lineWidth = 2.5;
+        for (let i = 0; i < 3; i++) {
+          const x = MONDE.x0 + ((t * (0.03 + i * 0.01) + i * 600) % (MONDE.x1 - MONDE.x0));
+          const y = 120 + i * 50 + Math.sin(t * 0.002 + i) * 10;
+          const aile = Math.sin(t * 0.012 + i) * 6;
+          f.beginPath();
+          f.moveTo(x - 12, y - aile);
+          f.quadraticCurveTo(x - 5, y - 6, x, y);
+          f.quadraticCurveTo(x + 5, y - 6, x + 12, y - aile);
+          f.stroke();
+        }
+      },
+    },
+
+    // ----- Sommet enneigé : nuit, aurore boréale, montagnes et sapins -----
+    sommet: {
+      fond(f) {
+        const alea = aleaGraine(41);
+        remplirCiel(f, [[0, '#08142e'], [0.5, '#1f3a6a'], [1, '#7f9fcf']]);
+        for (let i = 0; i < 90; i++) disque(f, MONDE.x0 + alea() * 1620, MONDE.y0 + alea() * 420, alea() < 0.85 ? 1.2 : 2, 'rgba(255,255,255,0.8)');
+        // Aurore boréale : des voiles verts et bleus.
+        for (const [y, couleur] of [[90, 'rgba(90,255,180,0.22)'], [150, 'rgba(120,200,255,0.18)'], [60, 'rgba(160,120,255,0.14)']]) {
+          f.fillStyle = couleur;
+          f.beginPath();
+          f.moveTo(MONDE.x0, y);
+          for (let x = MONDE.x0; x <= MONDE.x1; x += 40) f.lineTo(x, y + Math.sin(x * 0.006 + y) * 40);
+          for (let x = MONDE.x1; x >= MONDE.x0; x -= 40) f.lineTo(x, y + 90 + Math.sin(x * 0.006 + y) * 40);
+          f.closePath();
+          f.fill();
+        }
+        disque(f, 180, 110, 40, '#f2f4ff');
+        disque(f, 196, 100, 36, '#cfd9f2');
+        // Montagnes aux sommets enneigés.
+        for (const [y, amp, pas, couleur] of [[560, 330, 230, '#4a6390'], [640, 240, 190, '#33496e']]) {
+          const pts = relief(f, alea, y, amp, pas, couleur, true);
+          f.fillStyle = '#eef4ff';
+          for (let i = 0; i < pts.length; i += 2) {
+            const [px, py] = pts[i];
+            const g = pts[i - 1] || [px - 100, py + 200];
+            const d = pts[i + 1] || [px + 100, py + 200];
+            f.beginPath();
+            f.moveTo(px, py);
+            f.lineTo(px + (g[0] - px) * 0.3, py + (g[1] - py) * 0.3);
+            f.lineTo(px + (g[0] - px) * 0.18, py + (g[1] - py) * 0.36);
+            f.lineTo(px, py + (g[1] - py) * 0.25);
+            f.lineTo(px + (d[0] - px) * 0.3, py + (d[1] - py) * 0.3);
+            f.closePath();
+            f.fill();
+          }
+        }
+        for (let i = 0; i < 14; i++) sapin(f, MONDE.x0 + 40 + i * 120 + alea() * 40, 760 + alea() * 40, 1 + alea() * 0.6, '#1f3b3a', '#eef4ff');
+        f.fillStyle = '#e8f0ff';
+        f.fillRect(MONDE.x0, 800, MONDE.x1 - MONDE.x0, 100);
+      },
+      sol: {
+        corps: ['#7d8ea3', '#3c4658'], dessus: '#f4f8ff', epaisseur: 22, ondule: true, pointe: 90, reflet: 'rgba(170,200,255,0.6)',
+        motif(f, s, bas, alea) {
+          f.fillStyle = 'rgba(0,0,0,0.15)';
+          for (let i = 0; i < 16; i++) {
+            const x = s.x0 + alea() * (s.x1 - s.x0);
+            const y = s.y + 40 + alea() * 160;
+            f.beginPath();
+            f.moveTo(x, y);
+            f.lineTo(x + 30, y + 8);
+            f.lineTo(x + 8, y + 22);
+            f.closePath();
+            f.fill();
+          }
+        },
+        dessusMotif(f, s) {
+          // Stalactites de glace sous les bords.
+          f.fillStyle = '#cfeaff';
+          f.strokeStyle = CONTOUR;
+          f.lineWidth = 2;
+          for (const x of [s.x0 + 4, s.x0 + 26, s.x1 - 26, s.x1 - 4]) {
+            f.beginPath();
+            f.moveTo(x - 7, s.y + 20);
+            f.lineTo(x, s.y + 46);
+            f.lineTo(x + 7, s.y + 20);
+            f.fill();
+            f.stroke();
+          }
+        },
+      },
+      plateforme: { corps: '#9fd2f2', dessus: '#f4f8ff', epaisseur: 16 },
+      anim(f, t) {
+        // Neige qui tombe.
+        f.fillStyle = 'rgba(255,255,255,0.85)';
+        for (let i = 0; i < 70; i++) {
+          const v = 0.03 + (i % 5) * 0.01;
+          const y = MONDE.y0 + ((t * v + i * 131) % (MONDE.y1 - MONDE.y0));
+          const x = MONDE.x0 + ((i * 263) % (MONDE.x1 - MONDE.x0)) + Math.sin(t * 0.001 + i) * 20;
+          f.beginPath();
+          f.arc(x, y, 1.5 + (i % 3), 0, Math.PI * 2);
+          f.fill();
+        }
+      },
+    },
+
+    // ----- Ruines célestes : au-dessus des nuages, temple de marbre -----
+    ruines: {
+      fond(f) {
+        const alea = aleaGraine(77);
+        remplirCiel(f, [[0, '#5d9be6'], [0.6, '#bcd8f0'], [1, '#ffe9c4']]);
+        // Rayons de lumière.
+        f.fillStyle = 'rgba(255,245,210,0.18)';
+        for (let i = 0; i < 6; i++) {
+          f.beginPath();
+          f.moveTo(1100, -60);
+          f.lineTo(200 + i * 230, 860);
+          f.lineTo(290 + i * 230, 860);
+          f.closePath();
+          f.fill();
+        }
+        // Rochers flottants lointains avec colonnes brisées.
+        for (const [x, y, s] of [[60, 260, 0.8], [1250, 200, 1], [900, 120, 0.5], [300, 120, 0.45]]) {
+          f.fillStyle = 'rgba(150,140,170,0.55)';
+          f.beginPath();
+          f.moveTo(x - 80 * s, y);
+          f.lineTo(x + 80 * s, y);
+          f.lineTo(x + 20 * s, y + 90 * s);
+          f.lineTo(x - 30 * s, y + 70 * s);
+          f.closePath();
+          f.fill();
+          f.fillStyle = 'rgba(240,235,250,0.6)';
+          f.fillRect(x - 50 * s, y - 90 * s, 18 * s, 90 * s);
+          f.fillRect(x + 25 * s, y - 55 * s, 18 * s, 55 * s);
+        }
+        // Mer de nuages.
+        for (let i = 0; i < 26; i++) nuage(f, MONDE.x0 + i * 66 + alea() * 30, 720 + alea() * 50, 1.2 + alea() * 0.6, i % 2 ? '#ffffff' : '#f2f0ff');
+      },
+      sol: {
+        corps: ['#d8cbb0', '#9a8a70'], dessus: '#f4efe4', epaisseur: 18, pointe: 120, reflet: 'rgba(255,255,255,0.7)',
+        motif(f, s, bas) {
+          // Grosses pierres taillées.
+          f.strokeStyle = 'rgba(80,60,40,0.35)';
+          f.lineWidth = 2;
+          for (let y = s.y + 40, rang = 0; y < bas + 80; y += 32, rang++) {
+            f.beginPath();
+            f.moveTo(s.x0, y);
+            f.lineTo(s.x1, y);
+            for (let x = s.x0 + (rang % 2 ? 40 : 0); x < s.x1; x += 80) {
+              f.moveTo(x, y - 32);
+              f.lineTo(x, y);
+            }
+            f.stroke();
+          }
+        },
+        dessusMotif(f, s) {
+          // Dalles et liseré doré.
+          f.strokeStyle = 'rgba(120,100,70,0.45)';
+          f.lineWidth = 2;
+          for (let x = s.x0 + 50; x < s.x1; x += 50) {
+            f.beginPath();
+            f.moveTo(x, s.y);
+            f.lineTo(x, s.y + 16);
+            f.stroke();
+          }
+          f.strokeStyle = '#d9a93a';
+          f.lineWidth = 3;
+          f.beginPath();
+          f.moveTo(s.x0, s.y + 22);
+          f.lineTo(s.x1, s.y + 22);
+          f.stroke();
+        },
+      },
+      plateforme: {
+        corps: '#e6dccb', dessus: '#f8f4ec', epaisseur: 16,
+        motif(f, pl, ep) {
+          f.fillStyle = '#d9a93a';
+          f.fillRect(pl.x0 - 2, pl.y + ep - 5, pl.x1 - pl.x0 + 4, 3);
+        },
+      },
+      decoration(f, carte) {
+        // Colonnes brisées aux deux bouts du temple (décoratives).
+        const s = carte.sols[0];
+        for (const [x, h] of [[s.x0 + 30, 120], [s.x1 - 30, 80]]) {
+          f.fillStyle = '#eee6d6';
+          f.strokeStyle = CONTOUR;
+          f.lineWidth = 3;
+          f.beginPath();
+          f.moveTo(x - 16, s.y);
+          f.lineTo(x - 16, s.y - h);
+          f.lineTo(x - 4, s.y - h - 10);
+          f.lineTo(x + 6, s.y - h + 4);
+          f.lineTo(x + 16, s.y - h - 6);
+          f.lineTo(x + 16, s.y);
+          f.closePath();
+          f.fill();
+          f.stroke();
+          f.strokeStyle = 'rgba(0,0,0,0.15)';
+          for (const dx of [-6, 4]) {
+            f.beginPath();
+            f.moveTo(x + dx, s.y - 4);
+            f.lineTo(x + dx, s.y - h + 8);
+            f.stroke();
+          }
+        }
+      },
+      anim(f, t) {
+        // Quelques nuages qui passent devant la mer de nuages.
+        for (let i = 0; i < 4; i++) {
+          const x = MONDE.x0 - 200 + ((t * 0.02 + i * 450) % (MONDE.x1 - MONDE.x0 + 400));
+          nuage(f, x, 790 + (i % 2) * 30, 1.4, 'rgba(255,255,255,0.9)');
+        }
+      },
+    },
+
+    // ----- Toits de la ville : nuit, gratte-ciel illuminés -----
+    ville: {
+      fond(f) {
+        const alea = aleaGraine(99);
+        remplirCiel(f, [[0, '#0b0f2a'], [0.55, '#2a2350'], [1, '#6a3a6a']]);
+        for (let i = 0; i < 60; i++) disque(f, MONDE.x0 + alea() * 1620, MONDE.y0 + alea() * 360, 1.2, 'rgba(255,255,255,0.7)');
+        halo(f, 1080, 120, 160, 'rgba(255,250,220,0.35)');
+        disque(f, 1080, 120, 60, '#fff6d8');
+        // Deux rangées d'immeubles avec des fenêtres allumées.
+        for (const [base, hMin, hMax, couleur, fenetre] of [
+          [700, 160, 420, '#262448', 'rgba(255,220,130,0.55)'],
+          [780, 100, 300, '#1a1830', 'rgba(255,210,110,0.85)'],
+        ]) {
+          let x = MONDE.x0;
+          while (x < MONDE.x1) {
+            const l = 70 + alea() * 90;
+            const h = hMin + alea() * (hMax - hMin);
+            f.fillStyle = couleur;
+            f.fillRect(x, base - h, l - 6, MONDE.y1 - base + h);
+            if (alea() < 0.3) f.fillRect(x + l / 2 - 4, base - h - 40, 3, 40); // antenne
+            f.fillStyle = fenetre;
+            for (let fy = base - h + 14; fy < MONDE.y1; fy += 22) {
+              for (let fx = x + 8; fx < x + l - 18; fx += 16) {
+                if (alea() < 0.45) f.fillRect(fx, fy, 8, 11);
+              }
+            }
+            x += l;
+          }
+        }
+      },
+      sol: {
+        corps: ['#7a4a3c', '#3a2420'], dessus: '#6b6f7c', epaisseur: 16, pointe: 0, reflet: 'rgba(255,255,255,0.25)',
+        motif(f, s, bas, alea) {
+          // Briques et fenêtres de l'immeuble.
+          f.strokeStyle = 'rgba(0,0,0,0.25)';
+          f.lineWidth = 1.5;
+          for (let y = s.y + 30; y < bas; y += 14) {
+            f.beginPath();
+            f.moveTo(s.x0, y);
+            f.lineTo(s.x1, y);
+            f.stroke();
+          }
+          for (let y = s.y + 60; y < bas; y += 90) {
+            for (let x = s.x0 + 50; x < s.x1 - 60; x += 110) {
+              f.fillStyle = alea() < 0.6 ? '#ffd27a' : '#2a2a3a';
+              f.fillRect(x, y, 46, 52);
+              f.strokeStyle = CONTOUR;
+              f.lineWidth = 3;
+              f.strokeRect(x, y, 46, 52);
+              f.beginPath();
+              f.moveTo(x + 23, y);
+              f.lineTo(x + 23, y + 52);
+              f.stroke();
+            }
+          }
+        },
+      },
+      plateforme: { corps: '#555a66', dessus: '#7a7f8c', epaisseur: 14 },
+      decoration(f, carte) {
+        // Château d'eau et bouche d'aération sur le toit (décoratifs).
+        const s = carte.sols[0];
+        f.strokeStyle = CONTOUR;
+        f.lineWidth = 3;
+        const x = s.x1 - 150;
+        f.fillStyle = '#4a3a30';
+        f.fillRect(x - 30, s.y - 50, 6, 50);
+        f.fillRect(x + 24, s.y - 50, 6, 50);
+        f.fillStyle = '#8a5a3a';
+        f.beginPath();
+        f.roundRect(x - 40, s.y - 120, 80, 72, 8);
+        f.fill();
+        f.stroke();
+        f.fillStyle = '#5a3a2a';
+        f.beginPath();
+        f.moveTo(x - 46, s.y - 120);
+        f.lineTo(x, s.y - 150);
+        f.lineTo(x + 46, s.y - 120);
+        f.closePath();
+        f.fill();
+        f.stroke();
+        f.fillStyle = '#8a909c';
+        f.beginPath();
+        f.roundRect(s.x0 + 90, s.y - 34, 70, 34, 4);
+        f.fill();
+        f.stroke();
+      },
+      anim(f, t) {
+        // Lumières rouges qui clignotent au sommet des immeubles.
+        if (Math.floor(t / 600) % 2) {
+          for (const [x, y] of [[40, 300], [520, 360], [1180, 330], [900, 420]]) disque(f, x, y, 4, '#ff3a3a');
+        }
+      },
+    },
+  };
+
+  let carteDessinee = C.carte.id; // carte dont le décor est dans « fond »
+
+  /** Dessine la partie fixe du décor de la carte en cours dans l'image « fond ». */
+  function dessinerFond() {
+    const f = fond.getContext('2d');
+    const carte = C.carte;
+    const decor = DECORS[carte.decor] || DECORS.prairie;
+    carteDessinee = carte.id;
+    f.setTransform(ZOOM, 0, 0, ZOOM, CAM_X, CAM_Y);
+    decor.fond(f);
+    if (decor.decoration) decor.decoration(f, carte);
+    for (const s of carte.sols) dessinerSol(f, s, decor.sol);
+    for (const pl of carte.plateformes) dessinerPlateforme(f, pl, decor.plateforme);
     f.setTransform(1, 0, 0, 1, 0, 0);
+    // Une légère vignette sombre sur les bords.
+    const v = f.createRadialGradient(640, 360, 300, 640, 360, 800);
+    v.addColorStop(0, 'rgba(0,0,0,0)');
+    v.addColorStop(1, 'rgba(0,0,0,0.35)');
+    f.fillStyle = v;
+    f.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
   }
   dessinerFond();
 
-  // ===========================================================================
-  // PERSONNAGES — de petits combattants dessinés entièrement au trait
-  // ===========================================================================
-  const FOND_CORPS = '#0b0e20';
+  /** Partie animée du décor (à appeler en coordonnées du monde). */
+  function animerDecor(t) {
+    const decor = DECORS[C.carte.decor] || DECORS.prairie;
+    if (!decor.anim) return;
+    ctx.save();
+    decor.anim(ctx, t);
+    ctx.restore();
+  }
 
-  /** Remplit puis trace le chemin courant, avec un halo néon. */
+  /** Hauteur de la première surface sous le point (x, y), pour l'ombre des joueurs. */
+  function surfaceDessous(x, y) {
+    let meilleur = Infinity;
+    for (const s of C.carte.sols) if (x >= s.x0 && x <= s.x1 && s.y >= y - 1 && s.y < meilleur) meilleur = s.y;
+    for (const p of C.carte.plateformes) if (x >= p.x0 && x <= p.x1 && p.y >= y - 1 && p.y < meilleur) meilleur = p.y;
+    return meilleur;
+  }
+
+  /** Ombre portée au sol sous chaque joueur. */
+  function dessinerOmbre(j) {
+    const S = PERSOS[j.perso] || PERSOS.ondine;
+    const y = surfaceDessous(j.x, j.y);
+    if (y === Infinity) return;
+    const k = Math.max(0.25, 1 - (y - j.y) / 300);
+    ctx.fillStyle = 'rgba(0,0,0,' + (0.3 * k) + ')';
+    ctx.beginPath();
+    ctx.ellipse(j.x, y + 2, S.l * 0.6 * k, 6 * k, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // ===========================================================================
+  // PERSONNAGES — de petits combattants façon dessin animé : couleurs pleines
+  // et contour sombre.
+  // ===========================================================================
+
+  /** Remplit le chemin courant avec la couleur, puis trace le contour sombre. */
   function forme(couleur) {
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = FOND_CORPS;
+    ctx.fillStyle = couleur;
     ctx.fill();
-    ctx.fillStyle = couleur + '48';
-    ctx.fill();
-    ctx.shadowBlur = 12;
+    ctx.strokeStyle = CONTOUR;
     ctx.stroke();
+  }
+
+  /** Trait épais coloré, cerné de sombre (bras, jambes, écharpe…). */
+  function traitCerne(couleur, largeur) {
+    ctx.strokeStyle = CONTOUR;
+    ctx.lineWidth = largeur + 4;
+    ctx.stroke();
+    ctx.strokeStyle = couleur;
+    ctx.lineWidth = largeur;
+    ctx.stroke();
+    ctx.lineWidth = 3;
+  }
+
+  /** Éclaircit une couleur #rrggbb (k entre 0 et 1). */
+  function eclaircir(couleur, k) {
+    const n = parseInt(couleur.slice(1, 7), 16);
+    const canal = (d) => Math.round(((n >> d) & 255) + (255 - ((n >> d) & 255)) * k);
+    return 'rgb(' + canal(16) + ',' + canal(8) + ',' + canal(0) + ')';
   }
 
   function melanger(a, b, k) {
@@ -1822,8 +2834,8 @@ const PAGE_WEB = `<!DOCTYPE html>
     ctx.lineWidth = 3;
     ctx.lineJoin = 'round';
     ctx.lineCap = 'round';
-    ctx.strokeStyle = couleur;
-    ctx.shadowColor = couleur;
+    ctx.strokeStyle = CONTOUR;
+    ctx.shadowBlur = 0;
 
     const rTete = l * 0.52;
     const yTete = -h + rTete;
@@ -1842,6 +2854,10 @@ const PAGE_WEB = `<!DOCTYPE html>
 
     if (j.etat === 'charge') {
       mainAvant = [-l * 0.3 + (Math.random() - 0.5) * 3, -h * 0.5 + (Math.random() - 0.5) * 3];
+    } else if (j.etat === 'bord') {
+      // Suspendu au bord : les deux mains agrippées au rebord, devant lui.
+      mainAvant = [l * 0.5, -h + 12];
+      mainArriere = [l * 0.3, -h + 10];
     } else if (j.etat === 'bouclier') {
       mainAvant = [l * 0.5, -h * 0.6];
       mainArriere = [l * 0.2, -h * 0.5];
@@ -1872,11 +2888,11 @@ const PAGE_WEB = `<!DOCTYPE html>
     const yPied = j.sol ? 0 : -h * 0.07;
     const ecart = l * 0.16;
     const balancement = j.sol ? pas * l * 0.32 : -l * 0.12;
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 0;
     ctx.beginPath();
     ctx.moveTo(-ecart, yHanche); ctx.lineTo(-ecart + balancement, yPied - 3);
     ctx.moveTo(ecart, yHanche); ctx.lineTo(ecart - balancement, yPied - 3);
-    ctx.stroke();
+    traitCerne(couleur, 5);
     for (const px of [-ecart + balancement, ecart - balancement]) {
       ctx.beginPath();
       ctx.ellipse(px + l * 0.06, yPied - 3, l * 0.15, 3.5, 0, 0, Math.PI * 2);
@@ -1887,17 +2903,13 @@ const PAGE_WEB = `<!DOCTYPE html>
     if (style.attribut === 'oreilles') {
       const vent = Math.min(18, Math.abs(j.vx) * 2.5);
       ctx.save();
-      ctx.lineWidth = 5;
-      ctx.strokeStyle = '#ffffff';
-      ctx.shadowColor = '#ffffff';
-      ctx.shadowBlur = 8;
       ctx.beginPath();
       ctx.moveTo(-l * 0.15, yHautCorps + 3);
       ctx.quadraticCurveTo(
         -l * 0.7, yHautCorps - 4 + Math.sin(maintenant / 90) * 5,
         -l * 0.95 - vent, yHautCorps + 6 + Math.sin(maintenant / 70) * 6
       );
-      ctx.stroke();
+      traitCerne('#e8304a', 6); // écharpe rouge
       ctx.restore();
     }
 
@@ -1977,17 +2989,17 @@ const PAGE_WEB = `<!DOCTYPE html>
       }
     } else if (style.attribut === 'ailes') {
       // Zéphyr : un anneau de vent au-dessus de la tête.
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 0;
       ctx.beginPath();
       ctx.ellipse(0, yTete - rTete * 1.4 + Math.sin(maintenant / 220) * 2, rTete * 0.62, rTete * 0.18, 0, 0, Math.PI * 2);
-      ctx.stroke();
+      traitCerne('#ffffff', 3);
     } else if (style.attribut === 'bulles') {
       // Ondine : deux bulles qui flottent derrière elle.
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 0;
       for (const [dx, dy, r, v] of [[-1.35, -0.9, 4.5, 260], [-1.1, -1.55, 3, 190]]) {
         ctx.beginPath();
-        ctx.arc(dx * rTete, yTete + dy * rTete + Math.sin(maintenant / v) * 4, r, 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.arc(dx * rTete, yTete + dy * rTete + Math.sin(maintenant / v) * 4, r + 1, 0, Math.PI * 2);
+        forme('#d8ecff');
       }
     }
 
@@ -2012,15 +3024,20 @@ const PAGE_WEB = `<!DOCTYPE html>
       ctx.arc(0, yTete, rTete, 0, Math.PI * 2);
     }
     forme(couleur);
+    // Reflet clair sur la tête.
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(-rTete * 0.35, yTete - rTete * 0.45, rTete * 0.32, rTete * 0.18, -0.5, 0, Math.PI * 2);
+    ctx.fill();
 
     // -- Yeux --
     const xYeux = rTete * 0.28;
     const ecartYeux = rTete * 0.3;
     ctx.shadowColor = '#ffffff';
-    ctx.shadowBlur = 8;
+    ctx.shadowBlur = 0;
     if (j.etat === 'sonne') {
       // Yeux en croix quand on est sonné.
-      ctx.strokeStyle = '#ffffff';
+      ctx.strokeStyle = CONTOUR;
       ctx.lineWidth = 2.5;
       ctx.beginPath();
       for (const ox of [xYeux - ecartYeux, xYeux + ecartYeux]) {
@@ -2030,15 +3047,23 @@ const PAGE_WEB = `<!DOCTYPE html>
       ctx.stroke();
     } else {
       const concentre = j.etat === 'attaque' || j.etat === 'charge' || j.etat === 'bouclier';
-      ctx.fillStyle = '#ffffff';
+      ctx.lineWidth = 2;
       for (const ox of [xYeux - ecartYeux, xYeux + ecartYeux]) {
         ctx.beginPath();
-        ctx.ellipse(ox, yTete, rTete * 0.14, rTete * (concentre ? 0.15 : 0.27), 0, 0, Math.PI * 2);
+        ctx.ellipse(ox, yTete, rTete * 0.16, rTete * (concentre ? 0.17 : 0.27), 0, 0, Math.PI * 2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fill();
+        ctx.strokeStyle = CONTOUR;
+        ctx.stroke();
+        // Pupille, tournée vers l'avant.
+        ctx.fillStyle = CONTOUR;
+        ctx.beginPath();
+        ctx.arc(ox + rTete * 0.05, yTete + rTete * 0.02, rTete * 0.09, 0, Math.PI * 2);
         ctx.fill();
       }
       if (style.sourcils) {
         // Sourcils froncés.
-        ctx.strokeStyle = '#ffffff';
+        ctx.strokeStyle = CONTOUR;
         ctx.lineWidth = 3;
         ctx.beginPath();
         ctx.moveTo(xYeux - ecartYeux - 6, yTete - rTete * 0.5);
@@ -2046,8 +3071,7 @@ const PAGE_WEB = `<!DOCTYPE html>
         ctx.stroke();
       }
     }
-    ctx.strokeStyle = couleur;
-    ctx.shadowColor = couleur;
+    ctx.strokeStyle = CONTOUR;
     ctx.lineWidth = 3;
 
     dessinerMain(mainAvant);
@@ -2075,7 +3099,7 @@ const PAGE_WEB = `<!DOCTYPE html>
     if (j.etat === 'bouclier') {
       const r = h * 0.72 * (0.45 + 0.55 * Math.max(0, j.bouclier) / C.BOUCLIER_MAX);
       ctx.shadowColor = teinte;
-      ctx.shadowBlur = 18;
+      ctx.shadowBlur = 0;
       ctx.fillStyle = teinte + '33';
       ctx.strokeStyle = teinte;
       ctx.lineWidth = 3;
@@ -2087,11 +3111,12 @@ const PAGE_WEB = `<!DOCTYPE html>
 
     // --- Nom au-dessus de la tête ---
     ctx.globalAlpha = 1;
-    ctx.shadowColor = '#000000';
-    ctx.shadowBlur = 4;
-    ctx.fillStyle = j.couleur;
     ctx.font = 'bold 15px "Trebuchet MS", sans-serif';
     ctx.textAlign = 'center';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = CONTOUR;
+    ctx.strokeText(j.nom, 0, -h - rTete * 0.9 - 14);
+    ctx.fillStyle = j.couleur;
     ctx.fillText(j.nom, 0, -h - rTete * 0.9 - 14);
     if (estMoi) {
       // Petit triangle pour repérer son propre personnage.
@@ -2100,7 +3125,10 @@ const PAGE_WEB = `<!DOCTYPE html>
       ctx.moveTo(-7, -h - rTete * 0.9 - 9);
       ctx.lineTo(7, -h - rTete * 0.9 - 9);
       ctx.lineTo(0, -h - rTete * 0.9);
+      ctx.closePath();
       ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.stroke();
     }
     ctx.restore();
   }
@@ -2290,7 +3318,7 @@ const PAGE_WEB = `<!DOCTYPE html>
   // ===========================================================================
   function dessinerEffets(dt) {
     ctx.save();
-    ctx.globalCompositeOperation = 'lighter';
+    ctx.globalCompositeOperation = 'source-over';
 
     // Faisceaux d'éjection.
     for (const r of rayons) {
@@ -2362,72 +3390,93 @@ const PAGE_WEB = `<!DOCTYPE html>
   function dessinerInterface(joueurs) {
     const n = joueurs.length;
     if (n === 0) return;
-    const largeur = Math.min(210, (C.LARGEUR - 40) / n);
+    const largeur = Math.min(230, (C.LARGEUR - 40) / n);
     const depart = (C.LARGEUR - largeur * n) / 2;
 
     joueurs.forEach((j, i) => {
       const x = depart + i * largeur + largeur / 2;
-      const y = C.HAUTEUR - 22;
+      const y = C.HAUTEUR - 18;
+      const P = PERSOS[j.perso];
+      const teinte = P ? ELEMENTS[P.element].couleur : '#999999';
       ctx.save();
-      ctx.textAlign = 'center';
+      ctx.lineJoin = 'round';
 
-      // Fond du panneau.
-      ctx.fillStyle = 'rgba(6, 8, 22, 0.72)';
-      ctx.strokeStyle = j.couleur;
-      ctx.lineWidth = 2;
-      ctx.shadowColor = j.couleur;
-      ctx.shadowBlur = j.id === monId ? 16 : 6;
+      // Fond du panneau, avec la couleur du joueur en bandeau.
+      const gauche = x - largeur / 2 + 8;
+      ctx.fillStyle = 'rgba(20, 18, 30, 0.78)';
+      ctx.strokeStyle = CONTOUR;
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.roundRect(x - largeur / 2 + 8, y - 66, largeur - 16, 78, 10);
+      ctx.roundRect(gauche, y - 74, largeur - 16, 84, 12);
       ctx.fill();
       ctx.stroke();
+      ctx.fillStyle = j.couleur;
+      ctx.beginPath();
+      ctx.roundRect(gauche, y - 74, largeur - 16, 8, [12, 12, 0, 0]);
+      ctx.fill();
 
-      // Pourcentage.
-      ctx.shadowColor = '#000';
-      ctx.shadowBlur = 4;
-      ctx.font = 'bold 36px "Trebuchet MS", sans-serif';
+      // Pastille du personnage, à la couleur de son élément.
+      ctx.fillStyle = teinte;
+      ctx.beginPath();
+      ctx.arc(gauche + 30, y - 32, 22, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = CONTOUR;
+      ctx.font = 'bold 20px "Trebuchet MS", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(P ? P.nom[0] : '?', gauche + 30, y - 25);
+
+      // Pourcentage, cerné de noir ; il tremble un peu quand il est élevé.
+      const tremble = j.degats > 100 ? (Math.random() - 0.5) * 2 : 0;
+      ctx.font = 'bold 40px "Trebuchet MS", sans-serif';
+      ctx.textAlign = 'right';
+      ctx.lineWidth = 6;
+      ctx.strokeStyle = CONTOUR;
+      const xPourcent = gauche + largeur - 40;
+      ctx.strokeText(j.degats + '%', xPourcent + tremble, y - 22 + tremble);
       ctx.fillStyle = couleurDegats(j.degats);
-      ctx.fillText(j.degats + '%', x, y - 24);
+      ctx.fillText(j.degats + '%', xPourcent + tremble, y - 22 + tremble);
 
       // Nom et personnage.
       ctx.font = 'bold 12px "Trebuchet MS", sans-serif';
-      ctx.fillStyle = '#c3cdf5';
-      const P = PERSOS[j.perso];
-      const perso = P ? P.nom + ' (' + ELEMENTS[P.element].nom + ')' : '';
-      ctx.fillText(j.nom + ' · ' + perso, x, y - 6);
+      ctx.textAlign = 'left';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(j.nom, gauche + 58, y - 54);
+      ctx.fillStyle = '#b8b4c8';
+      ctx.fillText(P ? P.nom + ' · ' + ELEMENTS[P.element].nom : '', gauche + 58, y - 2);
 
-      // Voyants des deux capacités : pleins quand elles sont rechargées.
+      // Voyants des trois capacités (1, 2, aérienne) : pleins quand elles sont prêtes.
       if (P) {
-        const teinte = ELEMENTS[P.element].couleur;
-        [j.cd1, j.cd2].forEach((recharge, k) => {
-          const max = P[k ? 'spe2' : 'spe1'].recharge;
-          const cx = x + largeur / 2 - 26;
-          const cy = y - 48 + k * 20;
-          ctx.shadowColor = teinte;
-          ctx.shadowBlur = recharge > 0 ? 0 : 10;
-          ctx.strokeStyle = teinte;
-          ctx.lineWidth = 2;
-          ctx.globalAlpha = recharge > 0 ? 0.45 : 1;
+        [j.cd1, j.cd2, j.cd3].forEach((recharge, k) => {
+          const max = P['spe' + (k + 1)].recharge;
+          const cx = gauche + largeur - 30;
+          const cy = y - 52 + k * 17;
+          ctx.globalAlpha = recharge > 0 ? 0.5 : 1;
+          ctx.fillStyle = '#3a3648';
           ctx.beginPath();
           ctx.arc(cx, cy, 6.5, 0, Math.PI * 2);
-          ctx.stroke();
+          ctx.fill();
           ctx.fillStyle = teinte;
           ctx.beginPath();
           ctx.moveTo(cx, cy);
           ctx.arc(cx, cy, 6.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - Math.min(1, recharge / max)));
           ctx.fill();
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 6.5, 0, Math.PI * 2);
+          ctx.stroke();
           ctx.globalAlpha = 1;
         });
       }
 
       // Vies.
-      ctx.shadowColor = j.couleur;
-      ctx.shadowBlur = 8;
+      ctx.lineWidth = 2;
       for (let v = 0; v < C.VIES; v++) {
         ctx.beginPath();
-        ctx.arc(x + (v - (C.VIES - 1) / 2) * 16, y + 4, 4.5, 0, Math.PI * 2);
-        if (v < j.vies) { ctx.fillStyle = j.couleur; ctx.fill(); }
-        else { ctx.strokeStyle = j.couleur + '66'; ctx.lineWidth = 1.5; ctx.stroke(); }
+        ctx.arc(gauche + 62 + v * 15, y - 40, 5, 0, Math.PI * 2);
+        ctx.fillStyle = v < j.vies ? j.couleur : '#3a3648';
+        ctx.fill();
+        ctx.stroke();
       }
       ctx.restore();
     });
@@ -2441,10 +3490,8 @@ const PAGE_WEB = `<!DOCTYPE html>
     const bx = Math.max(26, Math.min(C.LARGEUR - 26, sx));
     const by = Math.max(26, Math.min(C.HAUTEUR - 110, sy));
     ctx.save();
-    ctx.shadowColor = j.couleur;
-    ctx.shadowBlur = 14;
     ctx.strokeStyle = j.couleur;
-    ctx.fillStyle = 'rgba(6, 8, 22, 0.8)';
+    ctx.fillStyle = 'rgba(20, 18, 30, 0.85)';
     ctx.lineWidth = 3;
     ctx.beginPath();
     ctx.arc(bx, by, 16, 0, Math.PI * 2);
@@ -2506,12 +3553,14 @@ const PAGE_WEB = `<!DOCTYPE html>
 
     // --- Dessin ---
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = '#05060d';
+    ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
     ctx.drawImage(fond, dx, dy);
 
     ctx.setTransform(ZOOM, 0, 0, ZOOM, CAM_X + dx, CAM_Y + dy);
+    animerDecor(maintenant);
     const vivants = joueurs.filter((j) => j.etat !== 'mort');
+    for (const j of vivants) dessinerOmbre(j);
     for (const j of vivants) {
       // Traînée derrière un joueur éjecté à grande vitesse.
       if (j.etat === 'sonne' && Math.hypot(j.vx, j.vy) > 8) {
@@ -2655,11 +3704,10 @@ MODULES['serveur'] = function (module, exports, require, __dirname) {
     let prochainId = 1;
     let mannequin = null;
 
-    const CENTRE_X = (C.BLOC.x0 + C.BLOC.x1) / 2;
-
-    /** Point d'apparition : alternativement à gauche et à droite du centre. */
+    /** Point d'apparition, pris dans la liste de la carte en cours. */
     function xApparition(joueur) {
-      return CENTRE_X + (joueur.id % 2 === 1 ? -200 : 200);
+      const departs = C.carte.departs;
+      return departs[(joueur.id - 1) % departs.length];
     }
 
     function couleurLibre() {
@@ -2692,7 +3740,7 @@ MODULES['serveur'] = function (module, exports, require, __dirname) {
 
     /** Le mannequin se tient au sol, au milieu de l'arène. */
     function placerMannequin() {
-      combat.reapparaitre(mannequin, CENTRE_X + 120, C.SOL_Y - 1);
+      combat.reapparaitre(mannequin, C.carte.mannequin.x, C.carte.mannequin.y - 1);
       mannequin.dir = -1;
     }
 
@@ -2735,6 +3783,8 @@ MODULES['serveur'] = function (module, exports, require, __dirname) {
           }
         } else if (msg.t === 'perso' && LISTE_PERSOS.includes(msg.perso)) {
           joueur.perso = msg.perso;
+        } else if (msg.t === 'carte' && C.CARTES[msg.id] && msg.id !== C.carte.id) {
+          changerCarte(msg.id, joueur);
         }
       });
 
@@ -2753,6 +3803,18 @@ MODULES['serveur'] = function (module, exports, require, __dirname) {
     let tick = 0;
     let evenements = []; // coups, éjections… accumulés jusqu'au prochain envoi
     const objets = [];   // projectiles et zones des capacités élémentaires
+
+    /** Change de carte : tout le monde repart de zéro sur la nouvelle arène. */
+    function changerCarte(id, auteur) {
+      C.choisirCarte(id);
+      objets.length = 0;
+      for (const joueur of joueurs.values()) {
+        joueur.vies = C.VIES;
+        if (joueur === mannequin) placerMannequin();
+        else combat.reapparaitre(joueur, xApparition(joueur));
+      }
+      console.log(`[carte] ${auteur.nom} passe sur « ${C.carte.nom} »`);
+    }
 
     function consommerInput(joueur) {
       const input = joueur.file.shift();
@@ -2800,6 +3862,7 @@ MODULES['serveur'] = function (module, exports, require, __dirname) {
         t: 'etat',
         tick,
         ev: evenements,
+        carte: C.carte.id,
         objets: capacites.instantane(objets),
         joueurs: [...joueurs.values()].map((j) => {
           const s = {

@@ -70,11 +70,10 @@ const joueurs = new Map(); // id -> joueur (humains et mannequin)
 let prochainId = 1;
 let mannequin = null;
 
-const CENTRE_X = (C.BLOC.x0 + C.BLOC.x1) / 2;
-
-/** Point d'apparition : alternativement à gauche et à droite du centre. */
+/** Point d'apparition, pris dans la liste de la carte en cours. */
 function xApparition(joueur) {
-  return CENTRE_X + (joueur.id % 2 === 1 ? -200 : 200);
+  const departs = C.carte.departs;
+  return departs[(joueur.id - 1) % departs.length];
 }
 
 function couleurLibre() {
@@ -107,7 +106,7 @@ function creerJoueur(socket) {
 
 /** Le mannequin se tient au sol, au milieu de l'arène. */
 function placerMannequin() {
-  combat.reapparaitre(mannequin, CENTRE_X + 120, C.SOL_Y - 1);
+  combat.reapparaitre(mannequin, C.carte.mannequin.x, C.carte.mannequin.y - 1);
   mannequin.dir = -1;
 }
 
@@ -150,6 +149,8 @@ wss.on('connection', (socket) => {
       }
     } else if (msg.t === 'perso' && LISTE_PERSOS.includes(msg.perso)) {
       joueur.perso = msg.perso;
+    } else if (msg.t === 'carte' && C.CARTES[msg.id] && msg.id !== C.carte.id) {
+      changerCarte(msg.id, joueur);
     }
   });
 
@@ -168,6 +169,18 @@ wss.on('connection', (socket) => {
 let tick = 0;
 let evenements = []; // coups, éjections… accumulés jusqu'au prochain envoi
 const objets = [];   // projectiles et zones des capacités élémentaires
+
+/** Change de carte : tout le monde repart de zéro sur la nouvelle arène. */
+function changerCarte(id, auteur) {
+  C.choisirCarte(id);
+  objets.length = 0;
+  for (const joueur of joueurs.values()) {
+    joueur.vies = C.VIES;
+    if (joueur === mannequin) placerMannequin();
+    else combat.reapparaitre(joueur, xApparition(joueur));
+  }
+  console.log(`[carte] ${auteur.nom} passe sur « ${C.carte.nom} »`);
+}
 
 function consommerInput(joueur) {
   const input = joueur.file.shift();
@@ -215,6 +228,7 @@ function diffuserEtat() {
     t: 'etat',
     tick,
     ev: evenements,
+    carte: C.carte.id,
     objets: capacites.instantane(objets),
     joueurs: [...joueurs.values()].map((j) => {
       const s = {

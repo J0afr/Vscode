@@ -1,8 +1,8 @@
 # Neon Brawl
 
 Jeu de combat de plateforme multijoueur en réseau local, jouable dans le navigateur.
-Personnages, décors et sons sont originaux et générés par le code (aucune image,
-aucun fichier audio, aucune ressource venant d'internet).
+Personnages, décors et sons sont originaux et dessinés ou générés par le code
+(aucune image, aucun fichier audio, aucune ressource venant d'internet).
 
 > Projet construit étape par étape. État actuel : **étapes 1 à 4** — réseau,
 > physique de plateforme, combat, personnages, effets visuels et sonores.
@@ -47,6 +47,8 @@ tu es éjecté loin. Tu perds une vie en sortant de l'écran. Chacun a 3 vies.
 | Attrape : courte portée, passe à travers le bouclier | `U` ou `X` |
 | Capacité 1 de l'élément | `I` ou `F` |
 | Capacité 2 de l'élément | bas + `I` |
+| Capacité aérienne | `I` en l'air (ou haut + `I`) |
+| Carte suivante (pour tout le monde, en réseau) | `Tab` |
 | Changer de personnage | `1` à `6` |
 
 Maintenir haut, bas ou un côté en attaquant change le coup. En l'air, les deux
@@ -72,19 +74,51 @@ L'**attrape** saisit l'adversaire même s'il se protège avec son bouclier, puis
 projette (maintenir la direction opposée pour le jeter derrière soi). Elle a une
 portée très courte et laisse à découvert si elle rate.
 
-Chaque personnage a deux **capacités** liées à son élément. Chacune a un temps de
-recharge, montré par deux voyants dans le panneau du joueur.
+Chaque personnage a trois **capacités** liées à son élément. Chacune a un temps de
+recharge, montré par trois voyants dans le panneau du joueur. La capacité aérienne
+ne s'utilise qu'une fois par saut (elle se recharge en touchant le sol ou un bord).
 
-| Personnage | Capacité 1 | Capacité 2 (bas + spécial) |
-| --- | --- | --- |
-| Braise | **Lance-flammes** : jet de flammes continu qui brûle | **Brasier** : flaque de feu au sol, blesse tant qu'on y reste |
-| Ondine | **Bulle** : projectile lent qui repousse loin | **Geyser** : colonne d'eau devant elle, envoie en l'air |
-| Brok | **Rocher** : gros projectile en cloche, très puissant | **Séisme** : frappe tous ceux qui sont au sol autour de lui |
-| Zéphyr | **Lame de vent** : projectile rapide qui traverse les adversaires | **Tornade** : le propulse vers le haut et blesse autour |
-| Zip | **Éclair** : projectile très rapide | **Mine électrique** : piège qui explose au contact |
-| Givre | **Éclat de glace** : projectile qui sonne longtemps | **Piège de givre** : plaque au sol qui gèle sur place |
+| Personnage | Capacité 1 | Capacité 2 (bas + spécial) | Capacité aérienne (spécial en l'air) |
+| --- | --- | --- | --- |
+| Braise | **Lance-flammes** : jet continu qui brûle | **Brasier** : flaque de feu au sol | **Envol ardent** : s'élance en diagonale, enflammée |
+| Ondine | **Bulle** : projectile lent qui repousse loin | **Geyser** : colonne d'eau qui envoie en l'air | **Tourbillon d'eau** : remonte en frappant tout autour |
+| Brok | **Rocher** : gros projectile en cloche | **Séisme** : frappe ceux qui sont au sol autour | **Météore** : plonge vers le bas et écrase vers le sol |
+| Zéphyr | **Lame de vent** : traverse les adversaires | **Tornade** : le propulse vers le haut | **Cyclone** : monte en tournoyant, dirigeable |
+| Zip | **Éclair** : projectile très rapide | **Mine électrique** : piège qui explose au contact | **Charge foudroyante** : ruée horizontale |
+| Givre | **Éclat de glace** : sonne longtemps | **Piège de givre** : gèle sur place | **Pluie de glace** : lâche des glaçons en dessous |
 
 Une capacité ne touche jamais celui qui l'a lancée.
+
+### S'accrocher au bord
+
+En tombant près du bord d'un sol, on s'y accroche automatiquement (sauf en
+maintenant bas), avec un court instant d'invulnérabilité. Ensuite :
+
+| Touche | Effet |
+| --- | --- |
+| haut ou direction de la scène | remonter |
+| saut (`Espace`) | sauter depuis le bord |
+| attaque | remonter en frappant |
+| esquive | remonter en roulade |
+| bas ou direction du vide | lâcher |
+
+Au bout de 5 secondes, on lâche tout seul.
+
+### Les cartes
+
+| Carte | Particularités |
+| --- | --- |
+| **Prairie** | Île flottante herbeuse et trois plateformes, l'arène classique |
+| **Volcan** | Deux îles de roche séparées par un vide, au-dessus d'une mer de lave |
+| **Plage** | Île de sable au coucher du soleil, une seule plateforme |
+| **Sommet enneigé** | Grande arène sous une aurore boréale, deux plateformes basses |
+| **Ruines célestes** | Temple au-dessus des nuages, plateformes au-delà des bords |
+| **Toits de la ville** | Toit d'immeuble de nuit, sans aucune plateforme |
+
+En local, la carte se choisit dans le menu (ou « Au hasard »). En réseau, `Tab`
+passe à la carte suivante pour tout le monde (les vies sont remises à zéro).
+Pour ajouter une carte : sa géométrie dans `CARTES` (`game/constants.js`) et son
+décor dans `DECORS` (`public/index.html`).
 
 Pour ajouter un personnage : une entrée dans `PERSOS` (`game/characters.js`) et une
 entrée dans `STYLES` (`public/index.html`) pour son apparence.
@@ -94,7 +128,7 @@ entrée dans `STYLES` (`public/index.html`) pour son apparence.
 | Fichier | Rôle |
 | --- | --- |
 | `server.js` | Serveur Express + WebSocket, boucle de jeu à 60 Hz, envoi de l'état à 30 Hz |
-| `game/constants.js` | Constantes partagées : arène, règles, touches |
+| `game/constants.js` | Constantes partagées : cartes, règles, touches |
 | `game/characters.js` | Éléments, statistiques des 6 personnages et table des attaques |
 | `game/physics.js` | Simulation d'un joueur pour un tick : déplacements, plateformes, actions |
 | `game/combat.js` | Coups, dégâts, éjections, bouclier, attrape, pertes de vie (serveur uniquement) |

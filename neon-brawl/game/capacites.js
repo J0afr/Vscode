@@ -44,7 +44,10 @@ function creer(objets, p, o, perso) {
   }
   // « auSol » : la zone se pose sur le sol sous le joueur.
   let y = p.y;
-  if (o.auSol && !p.sol && x >= C.BLOC.x0 && x <= C.BLOC.x1 && p.y < C.SOL_Y) y = C.SOL_Y;
+  if (o.auSol && !p.sol) {
+    const sol = C.carte.sols.find((s) => x >= s.x0 && x <= s.x1 && p.y < s.y);
+    if (sol) y = sol.y;
+  }
   objets.push({
     ...commun, type: 'z',
     x, y, l: o.l, h: o.h,
@@ -56,7 +59,7 @@ function creer(objets, p, o, perso) {
 /** Les joueurs qui lancent une capacité font apparaître leur objet. */
 function lancer(objets, joueurs) {
   for (const p of joueurs) {
-    if (p.etat !== 'attaque' || (p.atk !== 'spe1' && p.atk !== 'spe2')) continue;
+    if (p.etat !== 'attaque' || !p.atk.startsWith('spe')) continue;
     const infos = infosAttaque(p);
     const o = infos && infos.attaque.objet;
     if (!o || p.t <= infos.debut) continue;
@@ -97,10 +100,14 @@ function avancerProjectile(o, joueurs, evenements) {
     if (!o.def.perce) { o.vie = 0; return; } // un projectile perçant continue sa route
   }
 
-  // Le projectile s'écrase contre le bloc principal.
-  if (o.x > C.BLOC.x0 && o.x < C.BLOC.x1 && o.y + o.r * 0.5 > C.SOL_Y) {
-    o.vie = 0;
-    evenements.push({ t: 'eclat', x: Math.round(o.x), y: C.SOL_Y, el: o.element });
+  // Le projectile s'écrase contre les sols.
+  for (const s of C.carte.sols) {
+    const bas = s.bas === undefined ? 2000 : s.bas;
+    if (o.x > s.x0 && o.x < s.x1 && o.y + o.r * 0.5 > s.y && o.y - o.r < bas) {
+      o.vie = 0;
+      evenements.push({ t: 'eclat', x: Math.round(o.x), y: s.y, el: o.element });
+      return;
+    }
   }
 }
 

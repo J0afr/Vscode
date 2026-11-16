@@ -191,7 +191,7 @@ function effetsContinus(joueurs) {
  */
 function gererSorties(joueurs, evenements) {
   const prets = [];
-  const Z = C.SORTIE;
+  const Z = C.carte.sortie;
   for (const p of joueurs) {
     if (p.etat === 'mort') {
       if (p.retour > 0) p.retour--;
@@ -223,7 +223,7 @@ function reapparaitre(p, x, y = 140) {
   p.brulure = 0;
   p.sauts = (PERSOS[p.perso] || PERSOS.ondine).sautsAir;
   p.invul = 120;
-  p.dir = x < (C.BLOC.x0 + C.BLOC.x1) / 2 ? 1 : -1;
+  p.dir = x < C.carte.centre ? 1 : -1;
 }
 
 module.exports = { cercleToucheCorps, resoudreCoups, frapper, effetsContinus, gererSorties, reapparaitre };

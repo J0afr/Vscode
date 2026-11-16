@@ -24,7 +24,7 @@
     'dir',                  // sens du regard : 1 = droite, -1 = gauche
     'sol',                  // vrai si le joueur est posé sur une surface
     'sauts',                // sauts aériens restants
-    'etat',                 // 'libre' | 'attaque' | 'charge' | 'bouclier' | 'esquive' | 'sonne' | 'mort'
+    'etat',                 // 'libre' | 'attaque' | 'charge' | 'bouclier' | 'esquive' | 'sonne' | 'bord' | 'mort'
     't',                    // nombre de ticks passés dans l'état courant
     'atk',                  // nom de l'attaque (ou du type d'esquive) en cours
     'charge',               // ticks de charge de l'attaque forte
@@ -39,7 +39,9 @@
     'nAtk',                 // compteur d'attaques lancées
     'sonne',                // ticks restants sans contrôle après un coup
     'elan',                 // compte à rebours avant le décollage
-    'cd1', 'cd2',           // temps de recharge des deux capacités
+    'cd1', 'cd2', 'cd3',    // temps de recharge des trois capacités
+    'airSpe',               // capacité aérienne déjà utilisée depuis le dernier atterrissage
+    'bordCd',               // délai avant de pouvoir se raccrocher à un bord
   ];
 
   /** État de simulation d'un joueur neuf, placé en (x, y). */
@@ -48,7 +50,8 @@
       x, y, vx: 0, vy: 0, dir: 1, sol: false, sauts: 1,
       etat: 'libre', t: 0, atk: '', charge: 0, bouclier: C.BOUCLIER_MAX,
       gel: 0, invul: 0, traverse: 0, prev: 0, course: 0,
-      rapide: false, esqAir: false, nAtk: 0, sonne: 0, elan: 0, cd1: 0, cd2: 0,
+      rapide: false, esqAir: false, nAtk: 0, sonne: 0, elan: 0, cd1: 0, cd2: 0, cd3: 0,
+      airSpe: false, bordCd: 0,
     };
   }
 
@@ -59,10 +62,12 @@
 
   /** Surface sur laquelle le joueur est posé, ou null s'il n'y en a pas. */
   function surfaceSous(p) {
-    if (p.y === C.SOL_Y && p.x >= C.BLOC.x0 - MARGE_BORD && p.x <= C.BLOC.x1 + MARGE_BORD) {
-      return { traversable: false };
+    for (const s of C.carte.sols) {
+      if (p.y === s.y && p.x >= s.x0 - MARGE_BORD && p.x <= s.x1 + MARGE_BORD) {
+        return { traversable: false };
+      }
     }
-    for (const pl of C.PLATEFORMES) {
+    for (const pl of C.carte.plateformes) {
       if (p.y === pl.y && p.x >= pl.x0 - MARGE_BORD && p.x <= pl.x1 + MARGE_BORD) {
         return { traversable: true };
       }
@@ -98,12 +103,21 @@
 
   /**
    * Lance une capacité élémentaire si elle est rechargée.
-   * SPÉCIAL seul = première capacité, BAS + SPÉCIAL = seconde.
+   *   BAS + SPÉCIAL                    : capacité 2
+   *   SPÉCIAL en l'air, ou HAUT + SPÉCIAL : capacité aérienne (une fois par saut)
+   *   SPÉCIAL au sol                   : capacité 1
    */
-  function lancerSpecial(p, bas, axe, S) {
-    const nom = bas ? 'spe2' : 'spe1';
-    const recharge = bas ? 'cd2' : 'cd1';
+  function lancerSpecial(p, bas, haut, axe, S) {
+    let n = 1;
+    if (bas) n = 2;
+    else if (haut || !p.sol) n = 3;
+    const nom = 'spe' + n;
+    const recharge = 'cd' + n;
     if (p[recharge] > 0 || !S[nom]) return false;
+    if (n === 3) {
+      if (p.airSpe) return false;
+      p.airSpe = true;
+    }
     if (axe !== 0) p.dir = axe;
     lancerAttaque(p, nom);
     p[recharge] = S[nom].recharge;
@@ -150,7 +164,7 @@
 
     if (p.sol) {
       // ----- Au sol -----
-      if ((appui & T.SPECIAL) && lancerSpecial(p, bas, axe, S)) return;
+      if ((appui & T.SPECIAL) && lancerSpecial(p, bas, haut, axe, S)) return;
       if (appui & T.ATTRAPE) {
         if (axe !== 0) p.dir = axe;
         lancerAttaque(p, 'attrape');
@@ -220,7 +234,7 @@
     // ----- En l'air -----
     p.elan = 0;
     p.course = 0;
-    if ((appui & T.SPECIAL) && lancerSpecial(p, bas, axe, S)) return;
+    if ((appui & T.SPECIAL) && lancerSpecial(p, bas, haut, axe, S)) return;
     if (appui & (T.LEGER | T.FORT)) {
       if (haut) lancerAttaque(p, 'air_haut');
       else if (bas) lancerAttaque(p, 'air_bas');
@@ -254,13 +268,27 @@
       changerEtat(p, 'libre');
       return;
     }
-    // Certaines capacités donnent une impulsion au lanceur (tornade).
-    if (infos.attaque.elan && p.t === infos.debut + 1) {
-      const e = infos.attaque.elan;
-      if (e.vx !== undefined) p.vx = e.vx * p.dir;
-      if (e.vy !== undefined) { p.vy = e.vy; p.sol = false; p.rapide = false; }
+    const e = infos.attaque.elan;
+    // « suspend » : le joueur reste presque immobile en l'air pendant la préparation.
+    if (infos.attaque.suspend && !p.sol && p.t <= infos.debut) {
+      p.vy = Math.min(p.vy, 0.8);
+      p.vx *= 0.85;
     }
-    if (p.sol) {
+    // Certaines capacités propulsent le lanceur : une fois (« elan »), ou
+    // pendant toute la phase active (« tenir »).
+    const propulse = e && e.tenir && p.t > infos.debut && p.t <= infos.fin;
+    if (e && (p.t === infos.debut + 1 || propulse)) {
+      if (e.vx !== undefined) p.vx = e.vx * p.dir;
+      if (e.vy !== undefined) { p.vy = e.vy; if (e.vy < 0 || !p.sol) p.sol = false; p.rapide = false; }
+    }
+    // Fin de la propulsion : on retrouve sa vitesse normale.
+    if (e && e.tenir && p.t === infos.fin + 1) {
+      if (e.vx !== undefined) p.vx = Math.max(-S.vitAir, Math.min(S.vitAir, p.vx));
+      if (p.vy < -S.saut * 0.5) p.vy = -S.saut * 0.5;
+    }
+    if (propulse) {
+      if (e.vx === undefined) controleAir(p, axe, S, 1);
+    } else if (p.sol) {
       p.vx *= 0.8;
     } else {
       if ((appui & T.BAS) && p.vy > -1) p.rapide = true;
@@ -323,18 +351,104 @@
     p.sauts = S.sautsAir;
     p.rapide = false;
     p.esqAir = false;
+    p.airSpe = false;
     // Une attaque aérienne s'interrompt en touchant le sol.
-    if (p.etat === 'attaque' && p.atk.startsWith('air_')) changerEtat(p, 'libre');
+    if (p.etat === 'attaque' && (p.atk.startsWith('air_') || p.atk === 'spe3')) changerEtat(p, 'libre');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Accroche aux bords
+  // ---------------------------------------------------------------------------
+  /**
+   * En tombant près du bord d'un sol, le joueur s'y accroche automatiquement
+   * (sauf s'il maintient BAS). Il est alors invulnérable un court instant.
+   */
+  function essayerBord(p, S, touches) {
+    if (p.sol || p.bordCd > 0 || (touches & T.BAS)) return;
+    const recuperation = p.etat === 'attaque' && p.atk === 'spe3';
+    if (p.etat !== 'libre' && !recuperation) return;
+    if (p.vy < -2 && !recuperation) return; // on ne s'accroche pas en montant
+
+    for (const s of C.carte.sols) {
+      for (const cote of [-1, 1]) {           // -1 : bord gauche, 1 : bord droit
+        const bx = cote < 0 ? s.x0 : s.x1;
+        const xAccroche = bx + cote * S.l / 2; // centre du joueur suspendu
+        const hautCorps = p.y - S.h;
+        if (Math.abs(p.x - xAccroche) > 42) continue;
+        if (cote * (p.x - bx) < -12) continue; // il est au-dessus de la scène
+        if (hautCorps < s.y - 55 || hautCorps > s.y + 28) continue;
+
+        changerEtat(p, 'bord');
+        p.x = xAccroche;
+        p.y = s.y + S.h - 12; // les mains au niveau du bord
+        p.vx = 0;
+        p.vy = 0;
+        p.dir = -cote;        // il regarde la scène
+        p.sauts = S.sautsAir;
+        p.esqAir = false;
+        p.airSpe = false;
+        p.rapide = false;
+        p.invul = Math.max(p.invul, 40);
+        return;
+      }
+    }
+  }
+
+  /** Remonte du bord sur la scène. */
+  function monter(p, S) {
+    const bx = p.x + p.dir * S.l / 2;  // abscisse du bord
+    p.y = p.y - S.h + 12;              // hauteur du sol
+    p.x = bx + p.dir * (S.l / 2 + 2);
+    p.vx = 0;
+    p.vy = 0;
+    p.sol = true;
+    p.invul = Math.max(p.invul, 8);
+    changerEtat(p, 'libre');
+  }
+
+  function etatBord(p, touches, appui, S) {
+    p.vx = 0;
+    p.vy = 0;
+    if (p.t < 6) return; // petit temps avant de pouvoir agir
+    const versScene = p.dir > 0 ? T.DROITE : T.GAUCHE;
+    const versVide = p.dir > 0 ? T.GAUCHE : T.DROITE;
+
+    if (appui & T.SAUT) {
+      // Saut depuis le bord.
+      changerEtat(p, 'libre');
+      sauter(p, S.saut * 1.05);
+      p.vx = p.dir * 2;
+    } else if (appui & (T.HAUT | versScene)) {
+      monter(p, S);
+    } else if (appui & (T.LEGER | T.FORT)) {
+      monter(p, S);
+      lancerAttaque(p, 'leger_cote');
+    } else if (appui & T.ESQUIVE) {
+      // Roulade vers l'intérieur de la scène.
+      monter(p, S);
+      changerEtat(p, 'esquive');
+      p.atk = 'roulade';
+      p.vx = p.dir * 7.5;
+      p.invul = 16;
+    } else if ((appui & (T.BAS | versVide)) || p.t > 300) {
+      // On lâche (et au bout de 5 secondes, on lâche de toute façon).
+      changerEtat(p, 'libre');
+      p.bordCd = 30;
+    }
   }
 
   function deplacer(p, S) {
+    if (p.etat === 'bord') return; // suspendu : ni gravité ni mouvement
     const yAvant = p.y;
+    const carte = C.carte;
 
     if (p.sol) {
       p.vy = 0;
     } else {
       p.vy += S.gravite;
-      if (p.etat !== 'sonne') {
+      // Ni la vitesse maximale de chute ni la chute rapide ne s'appliquent quand
+      // on est éjecté ou propulsé par une capacité aérienne.
+      if (p.etat !== 'sonne' && !(p.etat === 'attaque' && p.atk === 'spe3')) {
         if (p.rapide && p.vy < S.chuteRapide) p.vy = S.chuteRapide;
         const max = p.rapide ? S.chuteRapide : S.chuteMax;
         if (p.vy > max) p.vy = max;
@@ -349,11 +463,17 @@
       if (!surfaceSous(p)) p.sol = false;
     } else if (p.vy >= 0) {
       // On ne se pose que si l'on arrive PAR LE DESSUS de la surface.
-      const dansBloc = p.x >= C.BLOC.x0 - MARGE_BORD && p.x <= C.BLOC.x1 + MARGE_BORD;
-      if (dansBloc && yAvant <= C.SOL_Y && p.y >= C.SOL_Y) {
-        atterrir(p, C.SOL_Y, S);
-      } else if (p.traverse === 0) {
-        for (const pl of C.PLATEFORMES) {
+      let pose = false;
+      for (const s of carte.sols) {
+        const dessus = p.x >= s.x0 - MARGE_BORD && p.x <= s.x1 + MARGE_BORD;
+        if (dessus && yAvant <= s.y && p.y >= s.y) {
+          atterrir(p, s.y, S);
+          pose = true;
+          break;
+        }
+      }
+      if (!pose && p.traverse === 0) {
+        for (const pl of carte.plateformes) {
           const dessus = p.x >= pl.x0 - MARGE_BORD && p.x <= pl.x1 + MARGE_BORD;
           if (dessus && yAvant <= pl.y && p.y >= pl.y) {
             atterrir(p, pl.y, S);
@@ -363,13 +483,21 @@
       }
     }
 
-    // Murs du bloc principal : si les pieds sont sous le niveau du sol et que
-    // le corps entre dans le bloc, on le repousse du côté le plus proche.
+    // Murs et plafonds des sols : si le corps entre dans un bloc plein sans
+    // venir du dessus, on le repousse.
     const demi = S.l / 2;
-    if (p.y > C.SOL_Y + 1 && p.x > C.BLOC.x0 - demi && p.x < C.BLOC.x1 + demi) {
-      const milieu = (C.BLOC.x0 + C.BLOC.x1) / 2;
-      p.x = p.x < milieu ? C.BLOC.x0 - demi : C.BLOC.x1 + demi;
-      p.vx = 0;
+    for (const s of carte.sols) {
+      const bas = s.bas === undefined ? 2000 : s.bas;
+      if (p.x <= s.x0 - demi || p.x >= s.x1 + demi) continue;
+      if (p.y <= s.y + 1 || p.y - S.h >= bas) continue;
+      if (yAvant - S.h >= bas - 1) {
+        // Il arrive par en dessous : il se cogne la tête.
+        p.y = bas + S.h;
+        if (p.vy < 0) p.vy = 0;
+      } else {
+        p.x = p.x < (s.x0 + s.x1) / 2 ? s.x0 - demi : s.x1 + demi;
+        p.vx = 0;
+      }
     }
   }
 
@@ -398,6 +526,8 @@
     if (p.traverse > 0) p.traverse--;
     if (p.cd1 > 0) p.cd1--;
     if (p.cd2 > 0) p.cd2--;
+    if (p.cd3 > 0) p.cd3--;
+    if (p.bordCd > 0) p.bordCd--;
     if (p.etat !== 'bouclier' && p.bouclier < C.BOUCLIER_MAX) {
       p.bouclier = Math.min(C.BOUCLIER_MAX, p.bouclier + 0.15);
     }
@@ -408,10 +538,12 @@
       case 'bouclier': etatBouclier(p, touches, appui, axe); break;
       case 'esquive': etatEsquive(p); break;
       case 'sonne': etatSonne(p); break;
+      case 'bord': etatBord(p, touches, appui, S); break;
       default: etatLibre(p, touches, appui, axe, S);
     }
 
     deplacer(p, S);
+    essayerBord(p, S, touches);
   }
 
   const physics = { CHAMPS, nouvelEtat, avancerJoueur, briserBouclier, changerEtat };

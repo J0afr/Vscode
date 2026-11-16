@@ -19,7 +19,6 @@
   const capacites = NB.capacites;
   const { PERSOS, ELEMENTS } = NB.persos;
   const T = C.TOUCHE;
-  const CENTRE_X = (C.BLOC.x0 + C.BLOC.x1) / 2;
 
   // ---------------------------------------------------------------------------
   // Touches des deux joueurs sur le même clavier
@@ -42,7 +41,7 @@
   const AIDE_J2 = 'Bouger <kbd>←</kbd><kbd>→</kbd> · Sauter <kbd>↑</kbd> · Descendre <kbd>↓</kbd> · '
     + 'Légère <kbd>K</kbd> · Forte <kbd>L</kbd> · Bouclier <kbd>M</kbd> · Esquive <kbd>O</kbd> · Attrape <kbd>I</kbd> · Spécial <kbd>P</kbd>';
   const AIDE_RESEAU = 'Bouger <kbd>←</kbd><kbd>→</kbd> ou <kbd>Q</kbd><kbd>D</kbd> · Sauter <kbd>↑</kbd> <kbd>Z</kbd> <kbd>Espace</kbd> · '
-    + 'Légère <kbd>J</kbd> · Forte <kbd>K</kbd> · Bouclier <kbd>L</kbd> · Esquive <kbd>Maj</kbd> · Attrape <kbd>U</kbd> · Spécial <kbd>I</kbd> · Personnage <kbd>1</kbd> à <kbd>6</kbd>';
+    + 'Légère <kbd>J</kbd> · Forte <kbd>K</kbd> · Bouclier <kbd>L</kbd> · Esquive <kbd>Maj</kbd> · Attrape <kbd>U</kbd> · Spécial <kbd>I</kbd> · Personnage <kbd>1</kbd> à <kbd>6</kbd> · Carte suivante <kbd>Tab</kbd>';
 
   const enfonceesJ2 = new Set();
   let appuisBrefsJ2 = 0;
@@ -67,7 +66,7 @@
   // ---------------------------------------------------------------------------
   // État de la partie
   // ---------------------------------------------------------------------------
-  const config = { perso1: 'braise', adversaire: 'joueur', perso2: 'brok' };
+  const config = { perso1: 'braise', adversaire: 'joueur', perso2: 'brok', carte: 'prairie' };
   let joueurs = [];
   let enCours = false;   // une partie locale tourne
   let terminee = false;  // quelqu'un a perdu ses 3 vies
@@ -87,12 +86,12 @@
   }
 
   function placer(joueur) {
-    const x = CENTRE_X + (joueur.id === 1 ? -200 : 200);
+    const carte = C.carte;
     if (joueur.nom === 'Mannequin') {
-      combat.reapparaitre(joueur, CENTRE_X + 120, C.SOL_Y - 1);
+      combat.reapparaitre(joueur, carte.mannequin.x, carte.mannequin.y - 1);
       joueur.dir = -1;
     } else {
-      combat.reapparaitre(joueur, x);
+      combat.reapparaitre(joueur, carte.departs[(joueur.id - 1) % carte.departs.length]);
     }
   }
 
@@ -122,15 +121,37 @@
   // ---------------------------------------------------------------------------
   const ia = { prochain: 0, plan: 0, saut: 0, bouclier: 0, appui: 0, fort: 0 };
 
+  /** Sol le plus proche de l'abscisse x. */
+  function solProche(x) {
+    let meilleur = null;
+    let distance = Infinity;
+    for (const s of C.carte.sols) {
+      const d = x < s.x0 ? s.x0 - x : x > s.x1 ? x - s.x1 : 0;
+      if (d < distance) { distance = d; meilleur = s; }
+    }
+    return meilleur;
+  }
+
   /** Choisit les touches de l'ordinateur (b) face à sa cible (c). */
   function touchesOrdi(b, c) {
     if (b.etat === 'mort') return 0;
+    const S = PERSOS[b.perso];
 
-    // Hors de l'arène : revenir vers le centre en sautant.
-    const dehors = b.x < C.BLOC.x0 + 10 || b.x > C.BLOC.x1 - 10;
-    if (!b.sol && (dehors || b.y > C.SOL_Y)) {
-      let m = b.x < CENTRE_X ? T.DROITE : T.GAUCHE;
+    // Accroché au bord : il remonte.
+    if (b.etat === 'bord') return b.t > 12 && tick % 4 === 0 ? T.HAUT : 0;
+
+    // Hors de l'arène : revenir vers le sol le plus proche.
+    const sol = solProche(b.x);
+    const dessus = b.x > sol.x0 + 10 && b.x < sol.x1 - 10;
+    if (!b.sol && (!dessus || b.y > sol.y)) {
+      const cible = Math.max(sol.x0 + 60, Math.min(sol.x1 - 60, b.x));
+      let m = b.x < cible ? T.DROITE : T.GAUCHE;
       if (b.vy > 0 && tick % 14 < 2) m |= T.HAUT;
+      // Plus de saut : la capacité aérienne (sauf si elle plonge vers le bas).
+      const remonte = !S.spe3.elan || !(S.spe3.elan.vy > 0);
+      if (b.sauts === 0 && !b.airSpe && b.cd3 === 0 && remonte && b.y > sol.y - 60 && tick % 6 === 0) {
+        m |= T.SPECIAL | T.HAUT;
+      }
       return m;
     }
     if (c.etat === 'mort') return 0;
@@ -173,9 +194,10 @@
     if (ia.bouclier > 0) { ia.bouclier--; m |= T.BOUCLIER; }
     if (ia.appui) { m |= ia.appui; ia.appui = 0; }
     // Ne pas marcher dans le vide.
-    if (b.sol && b.y === C.SOL_Y) {
-      if (b.x < C.BLOC.x0 + 30) m &= ~T.GAUCHE;
-      if (b.x > C.BLOC.x1 - 30) m &= ~T.DROITE;
+    const sous = C.carte.sols.find((s) => b.sol && b.y === s.y && b.x >= s.x0 - 10 && b.x <= s.x1 + 10);
+    if (sous) {
+      if (b.x < sous.x0 + 30) m &= ~T.GAUCHE;
+      if (b.x > sous.x1 - 30) m &= ~T.DROITE;
     }
     return m;
   }
@@ -219,7 +241,7 @@
 
   function diffuser() {
     const etat = {
-      t: 'etat', tick, ev: evenements, objets: capacites.instantane(objets),
+      t: 'etat', tick, ev: evenements, carte: C.carte.id, objets: capacites.instantane(objets),
       joueurs: joueurs.map((j) => {
         const s = {
           id: j.id, nom: j.nom, couleur: j.couleur, perso: j.perso,
@@ -253,6 +275,9 @@
   // Déroulement : lancer une partie, la finir
   // ---------------------------------------------------------------------------
   function lancerPartie() {
+    // Carte choisie (ou tirée au sort).
+    const ids = Object.keys(C.CARTES);
+    C.choisirCarte(config.carte === 'hasard' ? ids[Math.floor(Math.random() * ids.length)] : config.carte);
     const nomAdversaire = { joueur: 'Joueur 2', ordi: 'Ordinateur', mannequin: 'Mannequin' }[config.adversaire];
     const couleurAdversaire = config.adversaire === 'mannequin' ? '#9aa4c7' : '#ff2bd6';
     joueurs = [
@@ -285,7 +310,7 @@
     const P = PERSOS[gagnant.perso];
     panneau.innerHTML =
       '<div class="boite">'
-      + '<h1 style="color:' + ELEMENTS[P.element].couleur + '">' + gagnant.nom + ' gagne !</h1>'
+      + '<h1>' + gagnant.nom + ' gagne !</h1>'
       + '<p>' + P.nom + ' · ' + ELEMENTS[P.element].nom + '</p>'
       + '<p><button class="gros" data-action="rejouer">Rejouer</button> '
       + '<button class="gros" data-action="menu">Menu</button></p>'
@@ -298,20 +323,21 @@
   // ---------------------------------------------------------------------------
   const style = document.createElement('style');
   style.textContent = [
-    '#panneau { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;',
-    '  background: rgba(5, 6, 13, 0.86); overflow: auto; }',
-    '#panneau .boite { max-width: 880px; padding: 22px 30px; text-align: center; border: 2px solid #00e5ff;',
-    '  border-radius: 14px; background: #0a0d20; box-shadow: 0 0 40px rgba(0, 229, 255, 0.35); }',
-    '#panneau h1 { margin: 0 0 4px; color: #00e5ff; letter-spacing: 0.12em; text-shadow: 0 0 16px currentColor; }',
-    '#panneau h2 { margin: 16px 0 8px; font-size: 15px; color: #ff2bd6; letter-spacing: 0.08em; text-transform: uppercase; }',
+    '#panneau { position: fixed; inset: 0; z-index: 10; display: flex; padding: 10px; box-sizing: border-box;',
+    '  background: rgba(10, 10, 18, 0.82); overflow: auto; }',
+    '#panneau .boite { margin: auto; max-width: 900px; padding: 16px 28px; text-align: center; border: 4px solid #1d1a26;',
+    '  border-radius: 16px; background: linear-gradient(#2d2a44, #1f1c30); box-shadow: 0 10px 40px rgba(0,0,0,0.6); }',
+    '#panneau h1 { margin: 0 0 4px; color: #ffd23f; letter-spacing: 0.1em; font-size: 38px;',
+    '  text-shadow: 3px 3px 0 #1d1a26, -1px -1px 0 #1d1a26, 1px -1px 0 #1d1a26, -1px 1px 0 #1d1a26; }',
+    '#panneau h2 { margin: 10px 0 6px; font-size: 15px; color: #ffffff; letter-spacing: 0.08em; text-transform: uppercase; }',
     '#panneau p { margin: 6px 0; font-size: 13px; line-height: 2; }',
-    '#panneau button { margin: 3px; padding: 7px 12px; border: 2px solid #3b4a8a; border-radius: 8px; background: #10142b;',
-    '  color: #cfd8ff; font: inherit; font-size: 13px; cursor: pointer; }',
-    '#panneau button small { display: block; opacity: 0.7; font-size: 11px; }',
-    '#panneau button.choisi { background: #1c2450; color: #fff; box-shadow: 0 0 14px currentColor; }',
-    '#panneau button.gros { padding: 10px 26px; font-size: 17px; font-weight: bold; border-color: #00e5ff; color: #00e5ff; }',
-    '#panneau button.gros:hover { background: #00e5ff; color: #05060d; }',
-    '#panneau .note { opacity: 0.65; font-size: 12px; line-height: 1.5; }',
+    '#panneau button { margin: 3px; padding: 7px 12px; border: 3px solid #1d1a26; border-radius: 10px; background: #3d3958;',
+    '  color: #f2f2f7; font: inherit; font-size: 13px; font-weight: bold; cursor: pointer; text-shadow: 0 1px 2px #000; }',
+    '#panneau button small { display: block; opacity: 0.85; font-size: 11px; font-weight: normal; }',
+    '#panneau button:hover { filter: brightness(1.15); }',
+    '#panneau button.choisi { outline: 3px solid #ffd23f; outline-offset: 1px; transform: translateY(-2px); }',
+    '#panneau button.gros { padding: 10px 28px; font-size: 18px; background: #ffd23f; color: #1d1a26; text-shadow: none; }',
+    '#panneau .note { opacity: 0.75; font-size: 12px; line-height: 1.5; }',
   ].join('\n');
   document.head.appendChild(style);
 
@@ -323,7 +349,7 @@
     return Object.keys(PERSOS).map((id) => {
       const P = PERSOS[id];
       const couleur = ELEMENTS[P.element].couleur;
-      return '<button data-cle="' + cle + '" data-valeur="' + id + '" style="border-color:' + couleur + ';color:' + couleur + '"'
+      return '<button data-cle="' + cle + '" data-valeur="' + id + '" style="background:' + couleur + ';color:#1d1a26;text-shadow:none"'
         + (config[cle] === id ? ' class="choisi"' : '') + '>'
         + P.nom + '<small>' + ELEMENTS[P.element].nom + ' · ' + P.description + '</small></button>';
     }).join('');
@@ -340,13 +366,19 @@
       + Object.keys(types).map((id) => '<button data-cle="adversaire" data-valeur="' + id + '"'
         + (config.adversaire === id ? ' class="choisi"' : '') + '>' + types[id] + '</button>').join('')
       + '<br>' + boutonsPersos('perso2')
+      + '<h2>Carte</h2>'
+      + Object.keys(C.CARTES).concat('hasard').map((id) => '<button data-cle="carte" data-valeur="' + id + '"'
+        + (config.carte === id ? ' class="choisi"' : '') + '>'
+        + (id === 'hasard' ? 'Au hasard' : C.CARTES[id].nom) + '</button>').join('')
       + '<h2>Touches</h2>'
       + '<p><b>Joueur 1</b> — ' + AIDE_J1 + '<br><b>Joueur 2</b> — ' + AIDE_J2 + '</p>'
       + '<p class="note">Maintenir la direction pour courir. Maintenir Forte pour charger. '
       + 'Haut, bas ou côté + attaque change le coup.<br>'
-      + 'L\'attrape passe à travers le bouclier. Spécial = capacité 1, Bas + Spécial = capacité 2.</p>'
+      + 'L\'attrape passe à travers le bouclier. Spécial = capacité 1, Bas + Spécial = capacité 2, '
+      + 'Spécial en l\'air (ou Haut + Spécial) = capacité aérienne.<br>'
+      + 'Près du vide, on s\'accroche au bord : Haut pour remonter, Bas pour lâcher.</p>'
       + '<p><button class="gros" data-action="jouer">Jouer</button> '
-      + '<button class="gros" data-action="reseau" style="border-color:#ff2bd6;color:#ff2bd6">En réseau</button></p>'
+      + '<button class="gros" data-action="reseau" style="background:#4ac6ff">En réseau</button></p>'
       + '<p class="note">« En réseau » : pour jouer entre plusieurs PC. Il faut que le serveur de jeu '
       + 'soit lancé sur cette machine (port 3000).</p>'
       + '</div>';

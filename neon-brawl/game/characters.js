@@ -51,6 +51,12 @@
         objet: { type: 'zone', style: 'brasier', auSol: true, dx: 90, l: 60, h: 50, vie: 260, intervalle: 24,
           deg: 2.2, base: 2.5, ech: 0, angle: 80, sansGel: true },
       },
+      // Capacité aérienne : SPÉCIAL en l'air (ou HAUT + SPÉCIAL).
+      spe3: {
+        nom: 'Envol ardent', debut: 10, actif: 20, total: 40, recharge: 80, suspend: true,
+        elan: { vx: 7, vy: -11, tenir: true }, geste: [30, -70, 0],
+        boites: [[0, -40, 40]], deg: 10, base: 5, ech: 0.1, angle: 50,
+      },
     },
     ondine: {
       nom: 'Ondine', element: 'eau', description: 'Équilibrée, bon retour sur l\'arène',
@@ -70,6 +76,11 @@
         objet: { type: 'zone', style: 'geyser', auSol: true, dx: 110, l: 30, h: 230, vie: 26,
           deg: 9, base: 7, ech: 0.1, angle: 88 },
       },
+      spe3: {
+        nom: 'Tourbillon d\'eau', debut: 6, actif: 14, total: 34, recharge: 80,
+        elan: { vy: -10 }, geste: [0, -80, 0],
+        boites: [[0, -40, 58]], deuxCotes: true, deg: 9, base: 5.5, ech: 0.09, angle: 75,
+      },
     },
     brok: {
       nom: 'Brok', element: 'terre', description: 'Lourd et puissant',
@@ -88,6 +99,11 @@
         nom: 'Séisme', debut: 18, actif: 4, total: 52, recharge: 300, boites: [], geste: [20, -4, 0],
         objet: { type: 'zone', style: 'seisme', auSol: true, dx: 0, l: 190, h: 24, vie: 14,
           deg: 10, base: 6.5, ech: 0.1, angle: 80, deuxCotes: true, auSolSeulement: true },
+      },
+      spe3: {
+        nom: 'Météore', debut: 12, actif: 30, total: 50, recharge: 110, suspend: true,
+        elan: { vx: 0, vy: 17, tenir: true }, geste: [0, 10, 0],
+        boites: [[0, 0, 40]], deg: 14, base: 5, ech: 0.12, angle: -75,
       },
     },
     zephyr: {
@@ -110,6 +126,11 @@
         objet: { type: 'zone', style: 'tornade', dx: 0, l: 46, h: 150, vie: 50, intervalle: 9,
           deg: 2, base: 3.5, ech: 0, angle: 85, sansGel: true },
       },
+      spe3: {
+        nom: 'Cyclone', debut: 4, actif: 30, total: 44, recharge: 90,
+        elan: { vy: -8.5, tenir: true }, geste: [0, -80, 0],
+        boites: [[0, -36, 50]], deuxCotes: true, deg: 8, base: 5, ech: 0.08, angle: 85,
+      },
     },
     zip: {
       nom: 'Zip', element: 'foudre', description: 'Le plus rapide, léger',
@@ -128,6 +149,11 @@
         nom: 'Mine électrique', debut: 10, actif: 4, total: 34, recharge: 360, boites: [], geste: [20, -8, 0],
         objet: { type: 'zone', style: 'mine', dx: 0, l: 34, h: 60, vie: 600, delai: 40,
           declenche: true, unique: true, deg: 9, base: 5.5, ech: 0.1, angle: 80, deuxCotes: true },
+      },
+      spe3: {
+        nom: 'Charge foudroyante', debut: 6, actif: 16, total: 34, recharge: 80, suspend: true,
+        elan: { vx: 16, vy: -1.5, tenir: true }, geste: [40, -34, 0],
+        boites: [[30, -34, 32]], deg: 9, base: 4.5, ech: 0.1, angle: 35,
       },
     },
     givre: {
@@ -148,6 +174,12 @@
         nom: 'Piège de givre', debut: 14, actif: 4, total: 40, recharge: 420, boites: [], geste: [34, -12, 0],
         objet: { type: 'zone', style: 'givre', auSol: true, dx: 80, l: 55, h: 30, vie: 480, delai: 30,
           declenche: true, unique: true, deg: 5, base: 0, ech: 0, angle: 0, fige: 75 },
+      },
+      spe3: {
+        nom: 'Pluie de glace', debut: 8, actif: 16, total: 36, recharge: 100,
+        elan: { vy: -7 }, geste: [20, 10, 0], boites: [],
+        objet: { type: 'projectile', style: 'glacon', rafale: 5, vitesse: 2, vy: 10, g: 0.25, r: 15, vie: 60,
+          dx: 10, dy: 0, deg: 6, base: 3.5, ech: 0.07, angle: -60 },
       },
     },
   };
@@ -191,8 +223,8 @@
    */
   function infosAttaque(joueur) {
     const perso = PERSOS[joueur.perso] || PERSOS.ondine;
-    // « spe1 » et « spe2 » sont les capacités propres au personnage.
-    const special = joueur.atk === 'spe1' || joueur.atk === 'spe2';
+    // « spe1 », « spe2 » et « spe3 » sont les capacités propres au personnage.
+    const special = joueur.atk === 'spe1' || joueur.atk === 'spe2' || joueur.atk === 'spe3';
     const attaque = special ? perso[joueur.atk] : ATTAQUES[joueur.atk];
     if (!attaque) return null;
     const debut = Math.round(attaque.debut * perso.cadence);
