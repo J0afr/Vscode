@@ -81,3 +81,16 @@ Le serveur injecte `constants.js`, `characters.js` et `physics.js` dans la page 
 moment de la servir : le navigateur prédit ainsi les mouvements du joueur local avec
 exactement le même code que le serveur, sans dupliquer ce code. Les coups et les
 éjections, eux, ne sont calculés que par le serveur.
+
+## Version « tout en un »
+
+`neon-brawl-tout-en-un.js` contient tout le jeu (serveur, règles et page web) dans
+un seul fichier. Il suffit de le copier sur une machine, puis :
+
+```bash
+npm install express ws
+node neon-brawl-tout-en-un.js
+```
+
+Ce fichier est fabriqué à partir des autres : après une modification du code, on
+le régénère avec `npm run assembler` (ne pas le modifier à la main).

@@ -4,7 +4,8 @@
   "description": "Jeu de combat de plateforme multijoueur en réseau local",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "assembler": "node outils/assembler.js"
   },
   "license": "MIT",
   "dependencies": {

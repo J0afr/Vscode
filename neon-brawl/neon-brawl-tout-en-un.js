@@ -1,0 +1,2341 @@
+// =============================================================================
+// NEON BRAWL — version « tout en un »
+//
+// Ce fichier contient TOUT le jeu : le serveur, les règles et la page web.
+// Il est fabriqué automatiquement par outils/assembler.js.
+//
+// Pour jouer :
+//   1. Installer Node.js (version 18 ou plus)
+//   2. Dans le dossier de ce fichier :   npm install express ws
+//   3. Lancer :                          node neon-brawl-tout-en-un.js
+//   4. Ouvrir l'adresse affichée dans la console (http://<IP>:3000)
+//
+// Sommaire :
+//   PARTIE 1 — Règles du jeu (constantes, personnages, physique, combat)
+//   PARTIE 2 — Page web envoyée aux navigateurs (HTML + CSS + JavaScript)
+//   PARTIE 3 — Serveur
+//   PARTIE 4 — Démarrage
+// =============================================================================
+'use strict';
+
+// #############################################################################
+// PARTIE 1 — RÈGLES DU JEU
+// Chaque bloc ci-dessous est un « module ». Les trois premiers sont aussi
+// envoyés au navigateur, pour qu'il prédise les mouvements avec le même code.
+// #############################################################################
+const MODULES = {};
+
+// -----------------------------------------------------------------------------
+// Module « constants »  (fichier d'origine : game/constants.js)
+// -----------------------------------------------------------------------------
+MODULES['constants'] = function (module, exports, require) {
+    // =============================================================================
+    // constants.js — Constantes partagées entre le serveur et le navigateur.
+    //
+    // Ce fichier est chargé de deux façons :
+    //   - côté serveur, par require('./constants')
+    //   - côté navigateur, il est injecté tel quel dans index.html par server.js
+    //     et range son contenu dans l'objet global NB (NB.constants).
+    // =============================================================================
+    (function (racine) {
+      const constants = {
+        // --- Boucle de jeu ---
+        TICK_HZ: 60,          // la physique tourne à 60 pas par seconde
+        ETAT_TOUS_LES: 2,     // le serveur envoie l'état 1 tick sur 2 (30 fois/s)
+
+        // --- Écran (pixels « logiques », le canvas est mis à l'échelle) ---
+        LARGEUR: 1280,
+        HAUTEUR: 720,
+
+        // --- Arène ---
+        // Bloc principal : plein, on ne passe pas au travers. Il descend jusqu'en
+        // bas de l'écran (une sorte de tour), ses côtés sont des murs.
+        SOL_Y: 520,
+        BLOC: { x0: 240, x1: 1040 },
+        // Plateformes flottantes : on les traverse par le dessous, et on peut se
+        // laisser tomber au travers avec BAS.
+        PLATEFORMES: [
+          { x0: 330, x1: 530, y: 400 },
+          { x0: 750, x1: 950, y: 400 },
+          { x0: 540, x1: 740, y: 285 },
+        ],
+        // Zones d'éjection : au-delà, on perd une vie.
+        SORTIE: { gauche: -230, droite: 1510, haut: -220, bas: 900 },
+
+        // --- Règles ---
+        VIES: 3,
+        BOUCLIER_MAX: 100,
+        CHARGE_MAX: 60,       // nombre de ticks pour charger une attaque forte à fond
+        ELAN_SAUT: 4,         // petit délai avant de décoller (permet HAUT + attaque)
+
+        // --- Touches, codées sur un masque de bits pour un envoi compact ---
+        TOUCHE: {
+          GAUCHE: 1, DROITE: 2, HAUT: 4, BAS: 8,
+          SAUT: 16, LEGER: 32, FORT: 64, BOUCLIER: 128, ESQUIVE: 256,
+        },
+        MASQUE_TOUCHES: 511,
+      };
+
+      if (typeof module !== 'undefined' && module.exports) {
+        module.exports = constants;
+      } else {
+        racine.NB = racine.NB || {};
+        racine.NB.constants = constants;
+      }
+    })(typeof self !== 'undefined' ? self : this);
+};
+
+// -----------------------------------------------------------------------------
+// Module « characters »  (fichier d'origine : game/characters.js)
+// -----------------------------------------------------------------------------
+MODULES['characters'] = function (module, exports, require) {
+    // =============================================================================
+    // characters.js — Les 6 personnages (un par élément) et la table des attaques.
+    // Fichier partagé serveur / navigateur (voir constants.js).
+    // =============================================================================
+    (function (racine) {
+      // ---------------------------------------------------------------------------
+      // Éléments
+      // ---------------------------------------------------------------------------
+      // Chaque personnage appartient à un élément, qui lui donne sa couleur et un
+      // effet particulier quand ses coups touchent (appliqué dans combat.js).
+      const ELEMENTS = {
+        feu:    { nom: 'Feu',    couleur: '#ff6a2b', effet: 'Brûlure : la victime continue de prendre des dégâts' },
+        eau:    { nom: 'Eau',    couleur: '#4d8dff', effet: 'Vague : repousse plus fort, même à 0 %' },
+        terre:  { nom: 'Terre',  couleur: '#9be04a', effet: 'Séisme : brise les boucliers très vite' },
+        air:    { nom: 'Air',    couleur: '#7dffd0', effet: 'Bourrasque : envoie plus haut, et 2 sauts en l\'air' },
+        foudre: { nom: 'Foudre', couleur: '#ffe14a', effet: 'Paralysie : fige la victime plus longtemps' },
+        glace:  { nom: 'Glace',  couleur: '#c4f1ff', effet: 'Gel : la victime reste sonnée plus longtemps' },
+      };
+
+      // ---------------------------------------------------------------------------
+      // Personnages
+      // ---------------------------------------------------------------------------
+      //   element     : clé dans ELEMENTS
+      //   l, h        : largeur et hauteur du corps (zone où l'on peut être touché)
+      //   taille      : échelle des attaques (portée)
+      //   marche/course : vitesses au sol (px/tick)
+      //   vitAir, accelAir : contrôle en l'air
+      //   saut, doubleSaut : vitesse verticale au décollage
+      //   sautsAir    : nombre de sauts possibles en l'air
+      //   gravite, chuteMax, chuteRapide : chute
+      //   poids       : plus il est élevé, moins on est éjecté loin
+      //   puissance   : multiplicateur de dégâts
+      //   cadence     : multiplicateur de durée des attaques (< 1 = plus rapide)
+      const PERSOS = {
+        braise: {
+          nom: 'Braise', element: 'feu', description: 'Agressive, frappe fort',
+          l: 50, h: 76, taille: 1.25,
+          marche: 3.0, course: 6.6, accelSol: 1.0,
+          vitAir: 5.1, accelAir: 0.48,
+          saut: 13.2, doubleSaut: 12.2, sautsAir: 1,
+          gravite: 0.62, chuteMax: 11, chuteRapide: 16,
+          poids: 0.95, puissance: 1.1, cadence: 0.95,
+        },
+        ondine: {
+          nom: 'Ondine', element: 'eau', description: 'Équilibrée, bon retour sur l\'arène',
+          l: 52, h: 78, taille: 1.3,
+          marche: 2.9, course: 6.2, accelSol: 1.0,
+          vitAir: 5.2, accelAir: 0.5,
+          saut: 13.4, doubleSaut: 12.8, sautsAir: 1,
+          gravite: 0.56, chuteMax: 10, chuteRapide: 15,
+          poids: 1.0, puissance: 1.0, cadence: 1,
+        },
+        brok: {
+          nom: 'Brok', element: 'terre', description: 'Lourd et puissant',
+          l: 66, h: 90, taille: 1.55,
+          marche: 2.3, course: 5.1, accelSol: 0.7,
+          vitAir: 4.3, accelAir: 0.34,
+          saut: 13.0, doubleSaut: 11.8, sautsAir: 1,
+          gravite: 0.7, chuteMax: 12, chuteRapide: 17.5,
+          poids: 1.3, puissance: 1.25, cadence: 1.2,
+        },
+        zephyr: {
+          nom: 'Zéphyr', element: 'air', description: 'Très léger, plane et saute 3 fois',
+          l: 46, h: 70, taille: 1.15,
+          marche: 3.1, course: 6.8, accelSol: 1.1,
+          vitAir: 5.8, accelAir: 0.62,
+          saut: 13.0, doubleSaut: 12.0, sautsAir: 2,
+          gravite: 0.5, chuteMax: 9, chuteRapide: 14.5,
+          poids: 0.75, puissance: 0.85, cadence: 0.9,
+        },
+        zip: {
+          nom: 'Zip', element: 'foudre', description: 'Le plus rapide, léger',
+          l: 44, h: 66, taille: 1.1,
+          marche: 3.4, course: 7.6, accelSol: 1.3,
+          vitAir: 5.6, accelAir: 0.6,
+          saut: 13.6, doubleSaut: 12.6, sautsAir: 1,
+          gravite: 0.62, chuteMax: 11, chuteRapide: 16.5,
+          poids: 0.8, puissance: 0.85, cadence: 0.8,
+        },
+        givre: {
+          nom: 'Givre', element: 'glace', description: 'Solide, glisse un peu, coups lents',
+          l: 58, h: 84, taille: 1.42,
+          marche: 2.6, course: 5.7, accelSol: 0.45,
+          vitAir: 4.6, accelAir: 0.4,
+          saut: 13.0, doubleSaut: 12.0, sautsAir: 1,
+          gravite: 0.66, chuteMax: 11.5, chuteRapide: 17,
+          poids: 1.15, puissance: 1.1, cadence: 1.1,
+        },
+      };
+
+      // ---------------------------------------------------------------------------
+      // Attaques
+      // ---------------------------------------------------------------------------
+      //   debut  : ticks de préparation avant que le coup ne touche
+      //   actif  : ticks pendant lesquels le coup touche
+      //   total  : durée complète de l'attaque
+      //   deg    : dégâts (en %)
+      //   base   : éjection de base
+      //   ech    : éjection ajoutée par % de dégâts de la victime
+      //   angle  : direction d'éjection en degrés (0 = à l'horizontale devant,
+      //            90 = vers le haut, négatif = vers le bas)
+      //   boites : zones de frappe [décalage x, décalage y, rayon], relatives aux
+      //            pieds de l'attaquant, x positif = devant lui
+      //   deuxCotes : la victime est éjectée du côté où elle se trouve
+      const ATTAQUES = {
+        // --- Attaques légères au sol ---
+        jab:        { debut: 3,  actif: 3,  total: 14, deg: 3,  base: 3,   ech: 0.02, angle: 55,  boites: [[38, -32, 20]] },
+        leger_cote: { debut: 6,  actif: 4,  total: 24, deg: 7,  base: 4,   ech: 0.07, angle: 40,  boites: [[46, -30, 24]] },
+        leger_haut: { debut: 5,  actif: 5,  total: 24, deg: 6,  base: 4.5, ech: 0.07, angle: 90,  boites: [[8, -78, 26]] },
+        leger_bas:  { debut: 4,  actif: 3,  total: 20, deg: 5,  base: 3.5, ech: 0.05, angle: 75,  boites: [[42, -10, 20]] },
+        // --- Attaques fortes au sol (chargeables) ---
+        fort_cote:  { debut: 14, actif: 4,  total: 44, deg: 14, base: 5,   ech: 0.16, angle: 38,  boites: [[54, -32, 30]] },
+        fort_haut:  { debut: 11, actif: 5,  total: 42, deg: 13, base: 5,   ech: 0.15, angle: 88,  boites: [[4, -88, 32]] },
+        fort_bas:   { debut: 9,  actif: 4,  total: 40, deg: 12, base: 5,   ech: 0.13, angle: 28,  boites: [[44, -10, 24], [-44, -10, 24]], deuxCotes: true },
+        // --- Attaques aériennes ---
+        air_neutre: { debut: 4,  actif: 10, total: 28, deg: 6,  base: 3.5, ech: 0.07, angle: 50,  boites: [[0, -30, 40]], deuxCotes: true },
+        air_cote:   { debut: 7,  actif: 4,  total: 30, deg: 9,  base: 4,   ech: 0.11, angle: 40,  boites: [[46, -32, 26]] },
+        air_haut:   { debut: 5,  actif: 5,  total: 26, deg: 8,  base: 4,   ech: 0.10, angle: 85,  boites: [[4, -78, 28]] },
+        air_bas:    { debut: 12, actif: 5,  total: 36, deg: 11, base: 4,   ech: 0.11, angle: -80, boites: [[4, 8, 26]] },
+      };
+
+      /**
+       * Durées de l'attaque en cours d'un joueur, adaptées à la cadence de son
+       * personnage. Le coup touche quand  debut < joueur.t <= fin.
+       */
+      function infosAttaque(joueur) {
+        const attaque = ATTAQUES[joueur.atk];
+        if (!attaque) return null;
+        const perso = PERSOS[joueur.perso] || PERSOS.ondine;
+        const debut = Math.round(attaque.debut * perso.cadence);
+        const fin = debut + Math.max(2, Math.round(attaque.actif * perso.cadence));
+        const total = Math.max(fin + 2, Math.round(attaque.total * perso.cadence));
+        return { attaque, perso, debut, fin, total };
+      }
+
+      const persos = { ELEMENTS, PERSOS, ATTAQUES, infosAttaque };
+
+      if (typeof module !== 'undefined' && module.exports) {
+        module.exports = persos;
+      } else {
+        racine.NB.persos = persos;
+      }
+    })(typeof self !== 'undefined' ? self : this);
+};
+
+// -----------------------------------------------------------------------------
+// Module « physics »  (fichier d'origine : game/physics.js)
+// -----------------------------------------------------------------------------
+MODULES['physics'] = function (module, exports, require) {
+    // =============================================================================
+    // physics.js — Simulation d'UN joueur pendant UN tick.
+    //
+    // Ce code est exécuté à l'identique :
+    //   - par le serveur (qui fait autorité),
+    //   - par le navigateur (prédiction du joueur local).
+    // Il doit donc rester déterministe : même état + mêmes touches => même résultat.
+    //
+    // Il gère tout ce qui ne dépend que du joueur lui-même : déplacements, sauts,
+    // plateformes, et le déroulé de ses actions (attaque, bouclier, esquive…).
+    // Les interactions ENTRE joueurs (coups reçus, éjections) sont dans combat.js
+    // et ne sont calculées que par le serveur.
+    // =============================================================================
+    (function (racine) {
+      const cotéServeur = typeof module !== 'undefined' && module.exports;
+      const C = cotéServeur ? require('./constants') : racine.NB.constants;
+      const { PERSOS, infosAttaque } = cotéServeur ? require('./characters') : racine.NB.persos;
+      const T = C.TOUCHE;
+
+      // Champs qui décrivent entièrement la simulation d'un joueur. Ce sont eux que
+      // le client recopie depuis le serveur avant de rejouer ses inputs.
+      const CHAMPS = [
+        'x', 'y', 'vx', 'vy',   // position des pieds et vitesse
+        'dir',                  // sens du regard : 1 = droite, -1 = gauche
+        'sol',                  // vrai si le joueur est posé sur une surface
+        'sauts',                // sauts aériens restants
+        'etat',                 // 'libre' | 'attaque' | 'charge' | 'bouclier' | 'esquive' | 'sonne' | 'mort'
+        't',                    // nombre de ticks passés dans l'état courant
+        'atk',                  // nom de l'attaque (ou du type d'esquive) en cours
+        'charge',               // ticks de charge de l'attaque forte
+        'bouclier',             // énergie du bouclier
+        'gel',                  // « hit freeze » : ticks pendant lesquels le joueur est figé
+        'invul',                // ticks d'invulnérabilité restants
+        'traverse',             // ticks pendant lesquels on ignore les plateformes
+        'prev',                 // touches du tick précédent (pour détecter un appui)
+        'course',               // ticks passés à avancer dans la même direction
+        'rapide',               // chute rapide en cours
+        'esqAir',               // esquive aérienne déjà utilisée
+        'nAtk',                 // compteur d'attaques lancées
+        'sonne',                // ticks restants sans contrôle après un coup
+        'elan',                 // compte à rebours avant le décollage
+      ];
+
+      /** État de simulation d'un joueur neuf, placé en (x, y). */
+      function nouvelEtat(x, y) {
+        return {
+          x, y, vx: 0, vy: 0, dir: 1, sol: false, sauts: 1,
+          etat: 'libre', t: 0, atk: '', charge: 0, bouclier: C.BOUCLIER_MAX,
+          gel: 0, invul: 0, traverse: 0, prev: 0, course: 0,
+          rapide: false, esqAir: false, nAtk: 0, sonne: 0, elan: 0,
+        };
+      }
+
+      // ---------------------------------------------------------------------------
+      // Petites fonctions utilitaires
+      // ---------------------------------------------------------------------------
+      const MARGE_BORD = 6; // on tient encore debout avec le pied à peine dans le vide
+
+      /** Surface sur laquelle le joueur est posé, ou null s'il n'y en a pas. */
+      function surfaceSous(p) {
+        if (p.y === C.SOL_Y && p.x >= C.BLOC.x0 - MARGE_BORD && p.x <= C.BLOC.x1 + MARGE_BORD) {
+          return { traversable: false };
+        }
+        for (const pl of C.PLATEFORMES) {
+          if (p.y === pl.y && p.x >= pl.x0 - MARGE_BORD && p.x <= pl.x1 + MARGE_BORD) {
+            return { traversable: true };
+          }
+        }
+        return null;
+      }
+
+      /** Rapproche « valeur » de « cible » d'au plus « pas ». */
+      function approcher(valeur, cible, pas) {
+        if (valeur < cible) return Math.min(cible, valeur + pas);
+        return Math.max(cible, valeur - pas);
+      }
+
+      function changerEtat(p, etat) {
+        p.etat = etat;
+        p.t = 0;
+      }
+
+      function lancerAttaque(p, nom) {
+        changerEtat(p, 'attaque');
+        p.atk = nom;
+        p.charge = 0;
+        p.elan = 0;
+        p.nAtk++;
+      }
+
+      function lancerCharge(p, nom) {
+        changerEtat(p, 'charge');
+        p.atk = nom;
+        p.charge = 0;
+        p.elan = 0;
+      }
+
+      function sauter(p, vitesse) {
+        p.vy = -vitesse;
+        p.sol = false;
+        p.rapide = false;
+        p.elan = 0;
+      }
+
+      /** Le bouclier vole en éclats : le joueur est sonné un long moment. */
+      function briserBouclier(p) {
+        changerEtat(p, 'sonne');
+        p.sonne = 140;
+        p.vx = 0;
+        p.vy = -10;
+        p.sol = false;
+        p.bouclier = 40;
+      }
+
+      /** Déplacement horizontal en l'air. */
+      function controleAir(p, axe, S, facteur) {
+        if (axe !== 0) {
+          const cible = axe * S.vitAir;
+          // On n'accélère pas au-delà de la vitesse aérienne maximale, mais on peut
+          // toujours freiner si on va trop vite (après une éjection par exemple).
+          if ((axe > 0 && p.vx < cible) || (axe < 0 && p.vx > cible)) {
+            p.vx = approcher(p.vx, cible, S.accelAir * facteur);
+          }
+        }
+        if (Math.abs(p.vx) > S.vitAir) p.vx *= 0.96;
+      }
+
+      // ---------------------------------------------------------------------------
+      // Les états du joueur
+      // ---------------------------------------------------------------------------
+      function etatLibre(p, touches, appui, axe, S) {
+        const haut = touches & T.HAUT;
+        const bas = touches & T.BAS;
+        const appuiSaut = appui & (T.HAUT | T.SAUT);
+
+        if (p.sol) {
+          // ----- Au sol -----
+          if (appui & T.LEGER) {
+            if (haut) lancerAttaque(p, 'leger_haut');
+            else if (bas) lancerAttaque(p, 'leger_bas');
+            else if (axe !== 0) { p.dir = axe; lancerAttaque(p, 'leger_cote'); }
+            else lancerAttaque(p, 'jab');
+            return;
+          }
+          if (appui & T.FORT) {
+            if (haut) lancerCharge(p, 'fort_haut');
+            else if (bas) lancerCharge(p, 'fort_bas');
+            else { if (axe !== 0) p.dir = axe; lancerCharge(p, 'fort_cote'); }
+            return;
+          }
+          if (appui & T.ESQUIVE) {
+            changerEtat(p, 'esquive');
+            p.elan = 0;
+            if (axe !== 0) { p.atk = 'roulade'; p.vx = axe * 7.5; p.invul = 16; }
+            else { p.atk = 'surplace'; p.vx = 0; p.invul = 15; }
+            return;
+          }
+          if (touches & T.BOUCLIER) {
+            changerEtat(p, 'bouclier');
+            p.elan = 0;
+            return;
+          }
+
+          // Saut : on ne décolle qu'après un court élan. Si une attaque est lancée
+          // pendant cet élan avec HAUT enfoncé, c'est une attaque vers le haut qui
+          // part à la place du saut (voir plus haut).
+          if (appuiSaut && p.elan === 0) {
+            p.elan = C.ELAN_SAUT;
+          } else if (p.elan > 0) {
+            p.elan--;
+            if (p.elan === 0) { sauter(p, S.saut); return; }
+          }
+
+          // Traverser une plateforme vers le bas.
+          if ((appui & T.BAS)) {
+            const surface = surfaceSous(p);
+            if (surface && surface.traversable) {
+              p.traverse = 12;
+              p.sol = false;
+              return;
+            }
+          }
+
+          // Marche, puis course si on maintient la direction.
+          if (axe !== 0) {
+            if (p.dir !== axe) p.course = 0;
+            p.dir = axe;
+            p.course++;
+            const vitesse = p.course > 14 ? S.course : S.marche;
+            p.vx = approcher(p.vx, axe * vitesse, S.accelSol);
+          } else {
+            p.course = 0;
+            p.vx *= 0.7;
+            if (Math.abs(p.vx) < 0.1) p.vx = 0;
+          }
+          return;
+        }
+
+        // ----- En l'air -----
+        p.elan = 0;
+        p.course = 0;
+        if (appui & (T.LEGER | T.FORT)) {
+          if (haut) lancerAttaque(p, 'air_haut');
+          else if (bas) lancerAttaque(p, 'air_bas');
+          else if (axe !== 0) { p.dir = axe; lancerAttaque(p, 'air_cote'); }
+          else lancerAttaque(p, 'air_neutre');
+          return;
+        }
+        if ((appui & T.ESQUIVE) && !p.esqAir) {
+          changerEtat(p, 'esquive');
+          p.atk = 'air';
+          p.esqAir = true;
+          p.invul = 18;
+          p.rapide = false;
+          p.vx = axe * 6;
+          p.vy = haut ? -6 : bas ? 6 : p.vy * 0.3;
+          return;
+        }
+        if (appuiSaut && p.sauts > 0) {
+          p.sauts--;
+          sauter(p, S.doubleSaut);
+          if (axe !== 0) p.vx = axe * S.vitAir * 0.8;
+        } else if ((appui & T.BAS) && p.vy > -1) {
+          p.rapide = true; // chute rapide
+        }
+        controleAir(p, axe, S, 1);
+      }
+
+      function etatAttaque(p, touches, appui, axe, S) {
+        const infos = infosAttaque(p);
+        if (!infos || p.t >= infos.total) {
+          changerEtat(p, 'libre');
+          return;
+        }
+        if (p.sol) {
+          p.vx *= 0.8;
+        } else {
+          if ((appui & T.BAS) && p.vy > -1) p.rapide = true;
+          controleAir(p, axe, S, 0.7);
+        }
+      }
+
+      function etatCharge(p, touches) {
+        p.vx *= 0.8;
+        p.charge++;
+        // On frappe dès que la touche est relâchée, ou quand la charge est pleine.
+        if (!(touches & T.FORT) || p.charge >= C.CHARGE_MAX) {
+          p.etat = 'attaque';
+          p.t = 0;
+          p.nAtk++;
+        }
+      }
+
+      function etatBouclier(p, touches, appui, axe) {
+        if (!p.sol) { changerEtat(p, 'libre'); return; }
+        p.vx *= 0.7;
+        p.bouclier -= 0.3; // le bouclier s'use tant qu'on le maintient
+        if (p.bouclier <= 0) { briserBouclier(p); return; }
+
+        if (appui & T.ESQUIVE) {
+          changerEtat(p, 'esquive');
+          if (axe !== 0) { p.atk = 'roulade'; p.vx = axe * 7.5; p.invul = 16; }
+          else { p.atk = 'surplace'; p.vx = 0; p.invul = 15; }
+          return;
+        }
+        if (appui & (T.HAUT | T.SAUT)) {
+          changerEtat(p, 'libre');
+          p.elan = C.ELAN_SAUT;
+          return;
+        }
+        if (!(touches & T.BOUCLIER) && p.t >= 6) changerEtat(p, 'libre');
+      }
+
+      const DUREE_ESQUIVE = { roulade: 24, surplace: 22, air: 28 };
+
+      function etatEsquive(p) {
+        if (p.atk === 'roulade' && p.t > 16) p.vx *= 0.6;
+        if (p.atk === 'air') p.vx *= 0.95;
+        if (p.t >= (DUREE_ESQUIVE[p.atk] || 22)) changerEtat(p, 'libre');
+      }
+
+      function etatSonne(p) {
+        p.sonne--;
+        p.vx *= p.sol ? 0.9 : 0.985;
+        if (p.sonne <= 0) { p.sonne = 0; changerEtat(p, 'libre'); }
+      }
+
+      // ---------------------------------------------------------------------------
+      // Déplacement et collisions
+      // ---------------------------------------------------------------------------
+      function atterrir(p, y, S) {
+        p.y = y;
+        p.vy = 0;
+        p.sol = true;
+        p.sauts = S.sautsAir;
+        p.rapide = false;
+        p.esqAir = false;
+        // Une attaque aérienne s'interrompt en touchant le sol.
+        if (p.etat === 'attaque' && p.atk.startsWith('air_')) changerEtat(p, 'libre');
+      }
+
+      function deplacer(p, S) {
+        const yAvant = p.y;
+
+        if (p.sol) {
+          p.vy = 0;
+        } else {
+          p.vy += S.gravite;
+          if (p.etat !== 'sonne') {
+            if (p.rapide && p.vy < S.chuteRapide) p.vy = S.chuteRapide;
+            const max = p.rapide ? S.chuteRapide : S.chuteMax;
+            if (p.vy > max) p.vy = max;
+          }
+        }
+
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.sol) {
+          // On a peut-être marché dans le vide.
+          if (!surfaceSous(p)) p.sol = false;
+        } else if (p.vy >= 0) {
+          // On ne se pose que si l'on arrive PAR LE DESSUS de la surface.
+          const dansBloc = p.x >= C.BLOC.x0 - MARGE_BORD && p.x <= C.BLOC.x1 + MARGE_BORD;
+          if (dansBloc && yAvant <= C.SOL_Y && p.y >= C.SOL_Y) {
+            atterrir(p, C.SOL_Y, S);
+          } else if (p.traverse === 0) {
+            for (const pl of C.PLATEFORMES) {
+              const dessus = p.x >= pl.x0 - MARGE_BORD && p.x <= pl.x1 + MARGE_BORD;
+              if (dessus && yAvant <= pl.y && p.y >= pl.y) {
+                atterrir(p, pl.y, S);
+                break;
+              }
+            }
+          }
+        }
+
+        // Murs du bloc principal : si les pieds sont sous le niveau du sol et que
+        // le corps entre dans le bloc, on le repousse du côté le plus proche.
+        const demi = S.l / 2;
+        if (p.y > C.SOL_Y + 1 && p.x > C.BLOC.x0 - demi && p.x < C.BLOC.x1 + demi) {
+          const milieu = (C.BLOC.x0 + C.BLOC.x1) / 2;
+          p.x = p.x < milieu ? C.BLOC.x0 - demi : C.BLOC.x1 + demi;
+          p.vx = 0;
+        }
+      }
+
+      // ---------------------------------------------------------------------------
+      // Fonction principale
+      // ---------------------------------------------------------------------------
+      /**
+       * Fait avancer un joueur d'un tick.
+       * @param {object} p        le joueur (modifié sur place) ; doit avoir p.perso
+       * @param {number} touches  masque de bits des touches enfoncées
+       */
+      function avancerJoueur(p, touches) {
+        const S = PERSOS[p.perso] || PERSOS.ondine;
+
+        if (p.etat === 'mort') { p.prev = touches; return; }
+        // Hit freeze : tout est figé. On ne met pas « prev » à jour, pour qu'une
+        // touche enfoncée pendant le gel soit prise en compte juste après.
+        if (p.gel > 0) { p.gel--; return; }
+
+        const appui = touches & ~p.prev; // touches qui viennent d'être enfoncées
+        p.prev = touches;
+        const axe = (touches & T.DROITE ? 1 : 0) - (touches & T.GAUCHE ? 1 : 0);
+
+        p.t++;
+        if (p.invul > 0) p.invul--;
+        if (p.traverse > 0) p.traverse--;
+        if (p.etat !== 'bouclier' && p.bouclier < C.BOUCLIER_MAX) {
+          p.bouclier = Math.min(C.BOUCLIER_MAX, p.bouclier + 0.15);
+        }
+
+        switch (p.etat) {
+          case 'attaque': etatAttaque(p, touches, appui, axe, S); break;
+          case 'charge': etatCharge(p, touches); break;
+          case 'bouclier': etatBouclier(p, touches, appui, axe); break;
+          case 'esquive': etatEsquive(p); break;
+          case 'sonne': etatSonne(p); break;
+          default: etatLibre(p, touches, appui, axe, S);
+        }
+
+        deplacer(p, S);
+      }
+
+      const physics = { CHAMPS, nouvelEtat, avancerJoueur, briserBouclier, changerEtat };
+
+      if (cotéServeur) {
+        module.exports = physics;
+      } else {
+        racine.NB.physics = physics;
+      }
+    })(typeof self !== 'undefined' ? self : this);
+};
+
+// -----------------------------------------------------------------------------
+// Module « combat »  (fichier d'origine : game/combat.js)
+// -----------------------------------------------------------------------------
+MODULES['combat'] = function (module, exports, require) {
+    // =============================================================================
+    // combat.js — Interactions entre joueurs (serveur uniquement).
+    //
+    //   - détection des coups (zone de frappe contre corps adverse)
+    //   - dégâts, éjection, hitstun, hit freeze, bouclier
+    //   - sorties d'écran (perte d'une vie) et réapparition
+    //
+    // Les navigateurs ne calculent jamais rien de tout ça : ils reçoivent le
+    // résultat dans l'état envoyé par le serveur.
+    // =============================================================================
+    const C = require('./constants');
+    const { PERSOS, infosAttaque } = require('./characters');
+    const physics = require('./physics');
+
+    const DELAI_REAPPARITION = 70; // ticks entre l'éjection et le retour en jeu
+
+    /** Vrai si le cercle (cx, cy, r) touche le corps du joueur v. */
+    function cercleToucheCorps(cx, cy, r, v) {
+      const S = PERSOS[v.perso] || PERSOS.ondine;
+      // Point du rectangle du corps le plus proche du centre du cercle.
+      const px = Math.max(v.x - S.l / 2, Math.min(v.x + S.l / 2, cx));
+      const py = Math.max(v.y - S.h, Math.min(v.y, cy));
+      const dx = cx - px;
+      const dy = cy - py;
+      return dx * dx + dy * dy <= r * r;
+    }
+
+    /**
+     * Cherche tous les coups qui touchent pendant ce tick, puis les applique.
+     * On détecte d'abord et on applique ensuite : ainsi deux joueurs qui se
+     * frappent au même instant se touchent tous les deux.
+     * @param {object[]} joueurs
+     * @param {object[]} evenements  liste où ajouter les événements (pour les effets côté client)
+     */
+    function resoudreCoups(joueurs, evenements) {
+      const coups = [];
+
+      for (const a of joueurs) {
+        if (a.etat !== 'attaque') continue;
+        const infos = infosAttaque(a);
+        if (!infos) continue;
+
+        // Nouvelle attaque : on oublie qui a déjà été touché par la précédente.
+        if (a.memoireNAtk !== a.nAtk) {
+          a.memoireNAtk = a.nAtk;
+          a.dejaTouches = [];
+        }
+        if (a.t <= infos.debut || a.t > infos.fin) continue; // le coup n'est pas actif
+
+        const ech = infos.perso.taille;
+        for (const v of joueurs) {
+          if (v === a || v.etat === 'mort' || v.invul > 0) continue;
+          if (a.dejaTouches.includes(v.id)) continue;
+          for (const [bx, by, rayon] of infos.attaque.boites) {
+            const cx = a.x + bx * a.dir * ech;
+            const cy = a.y + by * ech;
+            if (cercleToucheCorps(cx, cy, rayon * ech, v)) {
+              a.dejaTouches.push(v.id);
+              coups.push({ a, v, infos, cx, cy });
+              break;
+            }
+          }
+        }
+      }
+
+      for (const coup of coups) appliquerCoup(coup, evenements);
+    }
+
+    function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
+      const { attaque, perso } = infos;
+      const element = perso.element;
+      // Une attaque chargée à fond fait 40 % de dégâts en plus et éjecte plus loin.
+      const charge = Math.min(1, a.charge / C.CHARGE_MAX);
+      const degats = attaque.deg * perso.puissance * (1 + 0.4 * charge);
+      const sv = PERSOS[v.perso] || PERSOS.ondine;
+      // Point d'impact, à mi-chemin entre la zone de frappe et la victime.
+      const ix = (cx + v.x) / 2;
+      const iy = (cy + v.y - sv.h / 2) / 2;
+
+      // --- Coup paré par le bouclier ---
+      if (v.etat === 'bouclier') {
+        // Terre : les coups de terre usent le bouclier bien plus vite.
+        v.bouclier -= degats * (element === 'terre' ? 2.2 : 1.3);
+        v.vx = (v.x >= a.x ? 1 : -1) * 2.5;
+        a.gel = v.gel = 4;
+        if (v.bouclier <= 0) {
+          physics.briserBouclier(v);
+          evenements.push({ t: 'brise', x: v.x, y: v.y - sv.h / 2, id: v.id });
+        } else {
+          evenements.push({ t: 'pare', x: ix, y: iy, id: v.id });
+        }
+        return;
+      }
+
+      // --- Coup reçu ---
+      v.degats += degats;
+      // Eau : une poussée de base plus forte.
+      const base = attaque.base + (element === 'eau' ? 1.3 : 0);
+      const ejection = ((base + v.degats * attaque.ech) * (1 + 0.3 * charge)) / sv.poids;
+
+      const cote = attaque.deuxCotes ? (v.x === a.x ? a.dir : Math.sign(v.x - a.x)) : a.dir;
+      // Air : les coups qui partent vers l'avant envoient plus haut.
+      const releve = element === 'air' && attaque.angle >= 0 && attaque.angle < 75 ? 14 : 0;
+      const angle = ((attaque.angle + releve) * Math.PI) / 180;
+      v.vx = Math.cos(angle) * ejection * cote;
+      v.vy = -Math.sin(angle) * ejection;
+      // Frappé vers le bas alors qu'on est au sol : on rebondit.
+      if (v.sol && v.vy > 0) v.vy = -v.vy * 0.8;
+      if (v.vy < 0) v.sol = false;
+
+      physics.changerEtat(v, 'sonne');
+      v.sonne = Math.min(100, Math.round(ejection * 2.4) + 6);
+      v.rapide = false;
+      v.elan = 0;
+      v.dir = -cote || v.dir; // la victime fait face à l'attaquant
+
+      // Hit freeze : les deux joueurs se figent un court instant, d'autant plus
+      // longtemps que le coup est fort.
+      const gel = Math.max(3, Math.min(14, Math.round(3 + degats / 2)));
+      a.gel = gel;
+      v.gel = gel;
+
+      // --- Effets des autres éléments ---
+      if (element === 'feu') v.brulure = 120;                       // brûle pendant 2 s
+      if (element === 'foudre') v.gel += 6;                         // paralysie
+      if (element === 'glace') v.sonne = Math.min(115, Math.round(v.sonne * 1.3)); // gel
+
+      evenements.push({
+        t: 'coup',
+        x: Math.round(ix), y: Math.round(iy),
+        f: Math.round(ejection * 10) / 10,   // force, pour doser les effets
+        id: v.id, de: a.id, el: element,
+      });
+    }
+
+    /**
+     * Gère les sorties d'écran et le compte à rebours des joueurs éliminés.
+     * Renvoie la liste des joueurs prêts à réapparaître (au serveur de décider
+     * s'ils reviennent, selon le mode de jeu).
+     */
+    function gererSorties(joueurs, evenements) {
+      const prets = [];
+      const Z = C.SORTIE;
+      for (const p of joueurs) {
+        if (p.etat === 'mort') {
+          if (p.retour > 0) p.retour--;
+          if (p.retour === 0) prets.push(p);
+          continue;
+        }
+        if (p.x < Z.gauche || p.x > Z.droite || p.y < Z.haut || p.y > Z.bas) {
+          p.vies--;
+          evenements.push({
+            t: 'ko', id: p.id,
+            x: Math.round(Math.max(Z.gauche, Math.min(Z.droite, p.x))),
+            y: Math.round(Math.max(Z.haut, Math.min(Z.bas, p.y))),
+          });
+          p.etat = 'mort';
+          p.t = 0;
+          p.vx = 0;
+          p.vy = 0;
+          p.retour = DELAI_REAPPARITION;
+        }
+      }
+      return prets;
+    }
+
+    /** Effets qui durent dans le temps : la brûlure du feu (+3 % en 2 secondes). */
+    function effetsContinus(joueurs) {
+      for (const p of joueurs) {
+        if (!(p.brulure > 0) || p.etat === 'mort') continue;
+        p.brulure--;
+        if (p.brulure % 20 === 0) p.degats += 0.5;
+      }
+    }
+
+    /** Remet un joueur en jeu au-dessus de l'arène, brièvement invulnérable. */
+    function reapparaitre(p, x, y = 140) {
+      const garde = { nAtk: p.nAtk, prev: p.prev };
+      Object.assign(p, physics.nouvelEtat(x, y), garde);
+      p.degats = 0;
+      p.brulure = 0;
+      p.sauts = (PERSOS[p.perso] || PERSOS.ondine).sautsAir;
+      p.invul = 120;
+      p.dir = x < (C.BLOC.x0 + C.BLOC.x1) / 2 ? 1 : -1;
+    }
+
+    module.exports = { resoudreCoups, effetsContinus, gererSorties, reapparaitre };
+};
+
+// #############################################################################
+// PARTIE 2 — PAGE WEB  (fichier d'origine : public/index.html)
+// #############################################################################
+const PAGE_WEB = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neon Brawl</title>
+<style>
+  /* Aucune ressource externe : tout est dans ce fichier (pas de CDN). */
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: #05060d;
+    color: #cfd8ff;
+    font-family: "Trebuchet MS", "Segoe UI", Verdana, sans-serif;
+    overflow: hidden;
+  }
+  #scene {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas {
+    display: block;
+    background: #090b17;
+    box-shadow: 0 0 40px rgba(0, 229, 255, 0.25);
+  }
+  #bandeau {
+    position: fixed;
+    top: 10px;
+    left: 14px;
+    font-size: 14px;
+    letter-spacing: 0.04em;
+    text-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+    pointer-events: none;
+  }
+  #bandeau b { color: #00e5ff; }
+  #touches {
+    position: fixed;
+    top: 8px;
+    right: 14px;
+    text-align: right;
+    font-size: 12px;
+    line-height: 1.9;
+    opacity: 0.8;
+    pointer-events: none;
+  }
+  #touches span { margin-left: 12px; white-space: nowrap; }
+  kbd {
+    display: inline-block;
+    min-width: 1.1em;
+    padding: 0 5px;
+    border: 1px solid #3b4a8a;
+    border-radius: 4px;
+    background: #10142b;
+    color: #fff;
+    font-family: inherit;
+    font-size: 11px;
+    text-align: center;
+  }
+</style>
+</head>
+<body>
+<div id="scene"><canvas id="jeu" width="1280" height="720"></canvas></div>
+<div id="bandeau"><b>NEON BRAWL</b> · <span id="statut">connexion…</span></div>
+<div id="touches">
+  <div>
+    <span>Bouger <kbd>←</kbd><kbd>→</kbd> / <kbd>Q</kbd><kbd>D</kbd></span>
+    <span>Sauter <kbd>↑</kbd> / <kbd>Z</kbd> / <kbd>Espace</kbd></span>
+    <span>Descendre <kbd>↓</kbd> / <kbd>S</kbd></span>
+  </div>
+  <div>
+    <span>Attaque légère <kbd>J</kbd> / <kbd>C</kbd></span>
+    <span>Attaque forte (maintenir) <kbd>K</kbd> / <kbd>V</kbd></span>
+    <span>Bouclier <kbd>L</kbd> / <kbd>B</kbd></span>
+    <span>Esquive <kbd>Maj</kbd> / <kbd>N</kbd></span>
+  </div>
+  <div>
+    <span>Personnage : <kbd>1</kbd> Braise · <kbd>2</kbd> Ondine · <kbd>3</kbd> Brok · <kbd>4</kbd> Zéphyr · <kbd>5</kbd> Zip · <kbd>6</kbd> Givre</span>
+  </div>
+</div>
+
+<!-- Le serveur remplace ce marqueur par le code partagé (dossier game/). -->
+<!--NB_PARTAGE-->
+
+<script>
+// =============================================================================
+// Client de Neon Brawl
+//
+// Principe du réseau :
+//   - À chaque tick (60/s) on lit le clavier, on numérote cet « input », on
+//     l'envoie au serveur ET on l'applique tout de suite en local : c'est la
+//     PRÉDICTION, le joueur ne ressent aucune latence.
+//   - Quand un état arrive du serveur, on repart de l'état officiel et on
+//     rejoue les inputs que le serveur n'a pas encore traités : c'est la
+//     RÉCONCILIATION.
+//   - Les autres joueurs sont affichés ~100 ms dans le passé, en glissant
+//     entre deux états reçus : c'est l'INTERPOLATION.
+//   - Les coups, dégâts et éjections ne sont JAMAIS calculés ici : seul le
+//     serveur en décide.
+// =============================================================================
+(function () {
+  'use strict';
+
+  const C = NB.constants;
+  const physics = NB.physics;
+  const { ELEMENTS, PERSOS, infosAttaque } = NB.persos;
+  const T = C.TOUCHE;
+
+  const canvas = document.getElementById('jeu');
+  const ctx = canvas.getContext('2d');
+  const elStatut = document.getElementById('statut');
+
+  // ---------------------------------------------------------------------------
+  // Mise à l'échelle : le jeu est dessiné en 1280x720 et étiré à la fenêtre.
+  // ---------------------------------------------------------------------------
+  function redimensionner() {
+    const echelle = Math.min(window.innerWidth / C.LARGEUR, window.innerHeight / C.HAUTEUR);
+    canvas.style.width = Math.floor(C.LARGEUR * echelle) + 'px';
+    canvas.style.height = Math.floor(C.HAUTEUR * echelle) + 'px';
+  }
+  window.addEventListener('resize', redimensionner);
+  redimensionner();
+
+  // Caméra fixe : on voit l'arène avec un peu de marge autour.
+  const ZOOM = 0.8;
+  const CAM_X = C.LARGEUR / 2 - 640 * ZOOM;
+  const CAM_Y = C.HAUTEUR / 2 - 400 * ZOOM;
+
+  // ===========================================================================
+  // SONS — tout est synthétisé avec la Web Audio API, aucun fichier audio.
+  // ===========================================================================
+  let actx = null;
+  let tamponBruit = null;
+
+  /** Les navigateurs n'autorisent le son qu'après une action de l'utilisateur. */
+  function activerAudio() {
+    if (!actx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      actx = new Ctx();
+      // Une seconde de bruit blanc, réutilisée pour tous les impacts.
+      tamponBruit = actx.createBuffer(1, actx.sampleRate, actx.sampleRate);
+      const donnees = tamponBruit.getChannelData(0);
+      for (let i = 0; i < donnees.length; i++) donnees[i] = Math.random() * 2 - 1;
+    }
+    if (actx.state === 'suspended') actx.resume();
+  }
+
+  /** Une note qui glisse de f0 à f1. */
+  function ton(f0, f1, duree, forme, volume) {
+    if (!actx) return;
+    const t0 = actx.currentTime;
+    const osc = actx.createOscillator();
+    const gain = actx.createGain();
+    osc.type = forme;
+    osc.frequency.setValueAtTime(f0, t0);
+    osc.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + duree);
+    gain.gain.setValueAtTime(volume, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + duree);
+    osc.connect(gain).connect(actx.destination);
+    osc.start(t0);
+    osc.stop(t0 + duree + 0.02);
+  }
+
+  /** Un souffle de bruit filtré, dont le filtre glisse de f0 à f1. */
+  function bruit(duree, f0, f1, volume, type) {
+    if (!actx) return;
+    const t0 = actx.currentTime;
+    const source = actx.createBufferSource();
+    source.buffer = tamponBruit;
+    source.loop = true;
+    const filtre = actx.createBiquadFilter();
+    filtre.type = type || 'lowpass';
+    filtre.frequency.setValueAtTime(f0, t0);
+    filtre.frequency.exponentialRampToValueAtTime(Math.max(40, f1), t0 + duree);
+    const gain = actx.createGain();
+    gain.gain.setValueAtTime(volume, t0);
+    gain.gain.exponentialRampToValueAtTime(0.001, t0 + duree);
+    source.connect(filtre).connect(gain).connect(actx.destination);
+    source.start(t0, Math.random() * 0.5);
+    source.stop(t0 + duree + 0.02);
+  }
+
+  const sons = {
+    saut() { ton(300, 620, 0.12, 'square', 0.05); },
+    doubleSaut() { ton(460, 940, 0.13, 'square', 0.05); },
+    atterrissage() { bruit(0.07, 500, 120, 0.12); },
+    frappe() { bruit(0.11, 2400, 500, 0.13, 'bandpass'); },
+    coup(force) {
+      const k = Math.min(1, force / 22);
+      ton(200 - 80 * k, 45, 0.12 + 0.2 * k, 'sine', 0.3 + 0.25 * k);
+      bruit(0.06 + 0.16 * k, 3500, 300, 0.2 + 0.25 * k);
+      if (k > 0.55) ton(900, 120, 0.25, 'sawtooth', 0.1);
+    },
+    pare() { ton(1300, 900, 0.09, 'triangle', 0.16); },
+    brise() { ton(1600, 150, 0.5, 'square', 0.14); bruit(0.4, 5000, 400, 0.25); },
+    esquive() { bruit(0.14, 900, 3000, 0.08, 'bandpass'); },
+    ko() {
+      bruit(1.0, 6000, 80, 0.5);
+      ton(1000, 50, 0.9, 'sawtooth', 0.16);
+      ton(120, 30, 0.7, 'sine', 0.5);
+    },
+  };
+
+  // ===========================================================================
+  // CLAVIER
+  // ===========================================================================
+  // On utilise event.code (position physique de la touche) : KeyW/KeyA/KeyS/KeyD
+  // correspondent à ZQSD sur un clavier AZERTY et à WASD sur un QWERTY.
+  const TOUCHES = {
+    ArrowLeft: T.GAUCHE, ArrowRight: T.DROITE, ArrowUp: T.HAUT, ArrowDown: T.BAS,
+    KeyA: T.GAUCHE, KeyD: T.DROITE, KeyW: T.HAUT, KeyS: T.BAS,
+    Space: T.SAUT,
+    KeyJ: T.LEGER, KeyK: T.FORT, KeyL: T.BOUCLIER, ShiftLeft: T.ESQUIVE, ShiftRight: T.ESQUIVE,
+    KeyC: T.LEGER, KeyV: T.FORT, KeyB: T.BOUCLIER, KeyN: T.ESQUIVE,
+  };
+  // Touches 1 à 6 (rangée du haut ou pavé numérique) : choix du personnage.
+  const CHOIX_PERSO = {};
+  Object.keys(PERSOS).forEach((cle, i) => {
+    CHOIX_PERSO['Digit' + (i + 1)] = cle;
+    CHOIX_PERSO['Numpad' + (i + 1)] = cle;
+  });
+  const enfoncees = new Set();
+  // Touches enfoncées depuis le dernier tick : un appui très bref (enfoncé puis
+  // relâché entre deux ticks) est ainsi quand même pris en compte.
+  let appuisBrefs = 0;
+
+  window.addEventListener('keydown', (e) => {
+    activerAudio();
+    if (e.code in TOUCHES) {
+      enfoncees.add(e.code);
+      appuisBrefs |= TOUCHES[e.code];
+      e.preventDefault(); // empêche les flèches / Espace de faire défiler la page
+    } else if (e.code in CHOIX_PERSO && !e.repeat) {
+      envoyer({ t: 'perso', perso: CHOIX_PERSO[e.code] });
+    }
+  });
+  window.addEventListener('keyup', (e) => enfoncees.delete(e.code));
+  // Si la fenêtre perd le focus, on relâche tout (sinon une touche reste « collée »).
+  window.addEventListener('blur', () => enfoncees.clear());
+  window.addEventListener('pointerdown', activerAudio);
+
+  function lireTouches() {
+    let masque = appuisBrefs;
+    appuisBrefs = 0;
+    for (const code of enfoncees) masque |= TOUCHES[code];
+    return masque;
+  }
+
+  // ===========================================================================
+  // ÉTAT DU CLIENT
+  // ===========================================================================
+  let socket = null;
+  let monId = null;
+
+  // Joueur local (prédit) : mêmes champs que sur le serveur.
+  const moi = Object.assign(physics.nouvelEtat(0, 0), { perso: 'ondine', connu: false });
+  let precedent = { x: 0, y: 0 };      // position au tick précédent (lissage d'affichage)
+  let enAttente = [];                   // inputs envoyés, pas encore acquittés
+  let seq = 0;                          // numéro du prochain input
+  const erreur = { x: 0, y: 0 };        // écart de correction, résorbé en douceur
+
+  // Derniers états reçus, pour interpoler les autres joueurs.
+  const DELAI_INTERPOLATION_MS = 100;
+  let historique = [];                  // [{ temps, joueurs: Map(id -> joueur) }]
+
+  // Effets visuels.
+  let particules = [];
+  let ondes = [];                       // anneaux qui s'élargissent
+  let rayons = [];                      // faisceaux d'éjection
+  let secousse = 0;                     // amplitude du tremblement d'écran
+  let flash = 0;                        // éclair blanc plein écran
+
+  // ===========================================================================
+  // RÉSEAU
+  // ===========================================================================
+  function envoyer(message) {
+    if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
+  }
+
+  function connecter() {
+    elStatut.textContent = 'connexion…';
+    socket = new WebSocket('ws://' + location.host);
+
+    socket.addEventListener('message', (e) => {
+      const msg = JSON.parse(e.data);
+      if (msg.t === 'bienvenue') {
+        monId = msg.id;
+        moi.connu = false;
+        enAttente = [];
+        historique = [];
+      } else if (msg.t === 'etat') {
+        recevoirEtat(msg);
+      }
+    });
+
+    socket.addEventListener('close', () => {
+      elStatut.textContent = 'déconnecté — nouvelle tentative…';
+      monId = null;
+      setTimeout(connecter, 1000);
+    });
+  }
+
+  function recevoirEtat(etat) {
+    const carte = new Map();
+    for (const j of etat.joueurs) carte.set(j.id, j);
+
+    // Sons et petits effets déduits du changement d'état de chaque joueur.
+    const ancien = historique.length ? historique[historique.length - 1].joueurs : null;
+    if (ancien) {
+      for (const j of etat.joueurs) {
+        const avant = ancien.get(j.id);
+        if (avant) effetsDeTransition(avant, j);
+      }
+    }
+    for (const ev of etat.ev) jouerEvenement(ev, carte);
+
+    historique.push({ temps: performance.now(), joueurs: carte });
+    if (historique.length > 30) historique.shift();
+
+    const humains = etat.joueurs.filter((j) => j.nom !== 'Mannequin').length;
+    elStatut.textContent = 'arène libre · ' + humains + ' joueur(s) en ligne';
+
+    // --- Réconciliation du joueur local ---
+    const officiel = carte.get(monId);
+    if (!officiel) return;
+
+    const avantX = moi.x;
+    const avantY = moi.y;
+
+    // 1. On repart de l'état du serveur…
+    for (const champ of physics.CHAMPS) moi[champ] = officiel[champ];
+    moi.perso = officiel.perso;
+    // 2. …on oublie les inputs déjà traités…
+    enAttente = enAttente.filter((input) => input.seq > officiel.acq);
+    // 3. …et on rejoue ceux qui ne le sont pas encore.
+    for (const input of enAttente) physics.avancerJoueur(moi, input.touches);
+
+    if (!moi.connu) {
+      moi.connu = true;
+      precedent.x = moi.x;
+      precedent.y = moi.y;
+      return;
+    }
+
+    // S'il y a un écart avec ce qu'on affichait, on ne « téléporte » pas le
+    // personnage : on garde l'écart de côté et on le réduit sur quelques images.
+    erreur.x += avantX - moi.x;
+    erreur.y += avantY - moi.y;
+    if (Math.abs(erreur.x) > 120 || Math.abs(erreur.y) > 120) {
+      erreur.x = 0;
+      erreur.y = 0;
+      precedent.x = moi.x;
+      precedent.y = moi.y;
+    }
+  }
+
+  // ===========================================================================
+  // EFFETS
+  // ===========================================================================
+  function etincelles(x, y, couleur, nombre, vitesse, angle, ouverture) {
+    for (let i = 0; i < nombre; i++) {
+      const a = angle === undefined ? Math.random() * Math.PI * 2 : angle + (Math.random() - 0.5) * ouverture;
+      const v = vitesse * (0.3 + Math.random() * 0.7);
+      const vie = 18 + Math.random() * 22;
+      particules.push({
+        x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+        vie, max: vie, couleur, taille: 2 + Math.random() * 3,
+      });
+    }
+  }
+
+  function poussiere(x, y) {
+    for (let i = 0; i < 6; i++) {
+      const vie = 12 + Math.random() * 10;
+      particules.push({
+        x: x + (Math.random() - 0.5) * 20, y,
+        vx: (Math.random() - 0.5) * 3, vy: -Math.random() * 1.2,
+        vie, max: vie, couleur: '#8fa0d8', taille: 3,
+      });
+    }
+  }
+
+  /** Compare deux états successifs d'un joueur pour déclencher sons et poussières. */
+  function effetsDeTransition(avant, apres) {
+    if (apres.etat === 'mort') return;
+    if (apres.nAtk > avant.nAtk) sons.frappe();
+    if (avant.sol && !apres.sol && apres.vy < -5 && apres.etat !== 'sonne') {
+      sons.saut();
+      poussiere(avant.x, avant.y);
+    } else if (!avant.sol && !apres.sol && apres.sauts < avant.sauts) {
+      sons.doubleSaut();
+      ondes.push({ x: apres.x, y: apres.y, r: 6, vr: 3, vie: 12, max: 12, couleur: apres.couleur });
+    }
+    if (!avant.sol && apres.sol && avant.etat !== 'mort') {
+      sons.atterrissage();
+      poussiere(apres.x, apres.y);
+    }
+    if (apres.etat === 'esquive' && avant.etat !== 'esquive') sons.esquive();
+  }
+
+  /** Événements envoyés par le serveur : coups, parades, éjections. */
+  function jouerEvenement(ev, carte) {
+    const victime = carte.get(ev.id);
+    const couleur = victime ? victime.couleur : '#ffffff';
+
+    if (ev.t === 'coup') {
+      sons.coup(ev.f);
+      etincelles(ev.x, ev.y, '#ffffff', 6 + ev.f, 3 + ev.f * 0.5);
+      const teinte = ELEMENTS[ev.el] ? ELEMENTS[ev.el].couleur : couleur;
+      etincelles(ev.x, ev.y, teinte, 8 + ev.f, 2 + ev.f * 0.5);
+      ondes.push({ x: ev.x, y: ev.y, r: 8, vr: 3 + ev.f * 0.3, vie: 14, max: 14, couleur: '#ffffff' });
+      // Tremblement d'écran uniquement sur les gros coups.
+      if (ev.f > 11) secousse = Math.max(secousse, Math.min(22, ev.f * 0.9));
+    } else if (ev.t === 'pare') {
+      sons.pare();
+      etincelles(ev.x, ev.y, couleur, 8, 4);
+    } else if (ev.t === 'brise') {
+      sons.brise();
+      etincelles(ev.x, ev.y, couleur, 40, 9);
+      ondes.push({ x: ev.x, y: ev.y, r: 20, vr: 7, vie: 22, max: 22, couleur });
+      secousse = Math.max(secousse, 12);
+    } else if (ev.t === 'ko') {
+      sons.ko();
+      // Explosion dirigée vers le centre de l'arène, depuis le bord de sortie.
+      const angle = Math.atan2(400 - ev.y, 640 - ev.x);
+      etincelles(ev.x, ev.y, couleur, 70, 26, angle, 0.7);
+      etincelles(ev.x, ev.y, '#ffffff', 40, 20, angle, 0.5);
+      rayons.push({ x: ev.x, y: ev.y, angle, vie: 34, max: 34, couleur });
+      secousse = 24;
+      flash = 0.55;
+    }
+  }
+
+  // ===========================================================================
+  // TICK LOCAL (60 Hz) : lecture du clavier, envoi, prédiction
+  // ===========================================================================
+  function tickLocal() {
+    if (!moi.connu || !socket || socket.readyState !== WebSocket.OPEN) return;
+
+    const input = { seq: ++seq, touches: lireTouches() };
+    socket.send(JSON.stringify({ t: 'input', seq: input.seq, touches: input.touches }));
+
+    precedent.x = moi.x;
+    precedent.y = moi.y;
+    physics.avancerJoueur(moi, input.touches);
+
+    enAttente.push(input);
+    if (enAttente.length > 120) enAttente.shift();
+  }
+
+  // ===========================================================================
+  // INTERPOLATION DES AUTRES JOUEURS
+  // ===========================================================================
+  function joueursInterpoles() {
+    if (historique.length === 0) return [];
+    const cible = performance.now() - DELAI_INTERPOLATION_MS;
+
+    // On cherche les deux états qui encadrent l'instant « cible ».
+    let a = historique[0];
+    let b = historique[0];
+    for (let i = historique.length - 1; i >= 0; i--) {
+      if (historique[i].temps <= cible) {
+        a = historique[i];
+        b = historique[i + 1] || historique[i];
+        break;
+      }
+    }
+    const duree = b.temps - a.temps;
+    const k = duree > 0 ? Math.min(1, Math.max(0, (cible - a.temps) / duree)) : 0;
+
+    const resultat = [];
+    for (const [id, jb] of b.joueurs) {
+      const ja = a.joueurs.get(id) || jb;
+      // Pas de glissement entre le point d'éjection et le point de réapparition.
+      const saut = ja.etat === 'mort' || jb.etat === 'mort';
+      resultat.push(Object.assign({}, ja, {
+        x: saut ? ja.x : ja.x + (jb.x - ja.x) * k,
+        y: saut ? ja.y : ja.y + (jb.y - ja.y) * k,
+      }));
+    }
+    return resultat;
+  }
+
+  // ===========================================================================
+  // DÉCOR — dessiné une seule fois dans une image, puis recopié à chaque frame
+  // ===========================================================================
+  const fond = document.createElement('canvas');
+  fond.width = C.LARGEUR;
+  fond.height = C.HAUTEUR;
+
+  function dessinerFond() {
+    const f = fond.getContext('2d');
+
+    // Ciel.
+    const ciel = f.createLinearGradient(0, 0, 0, C.HAUTEUR);
+    ciel.addColorStop(0, '#060714');
+    ciel.addColorStop(0.6, '#0d1030');
+    ciel.addColorStop(1, '#1b0d33');
+    f.fillStyle = ciel;
+    f.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
+
+    // Étoiles (positions pseudo-aléatoires mais toujours les mêmes).
+    let graine = 7;
+    const alea = () => { graine = (graine * 16807) % 2147483647; return graine / 2147483647; };
+    for (let i = 0; i < 110; i++) {
+      f.fillStyle = 'rgba(190, 210, 255,' + (0.15 + alea() * 0.5) + ')';
+      const taille = alea() < 0.85 ? 1.2 : 2.2;
+      f.fillRect(alea() * C.LARGEUR, alea() * C.HAUTEUR * 0.8, taille, taille);
+    }
+
+    // Grille en perspective au loin.
+    f.strokeStyle = 'rgba(255, 43, 214, 0.13)';
+    f.lineWidth = 1;
+    f.beginPath();
+    for (let i = -12; i <= 12; i++) {
+      f.moveTo(640 + i * 30, 500);
+      f.lineTo(640 + i * 150, C.HAUTEUR);
+    }
+    for (let y = 500, pas = 8; y < C.HAUTEUR; y += pas, pas *= 1.35) {
+      f.moveTo(0, y);
+      f.lineTo(C.LARGEUR, y);
+    }
+    f.stroke();
+
+    // --- À partir d'ici, coordonnées du monde ---
+    f.setTransform(ZOOM, 0, 0, ZOOM, CAM_X, CAM_Y);
+
+    // Bloc principal.
+    const { x0, x1 } = C.BLOC;
+    const corps = f.createLinearGradient(0, C.SOL_Y, 0, C.SOL_Y + 340);
+    corps.addColorStop(0, '#1a2152');
+    corps.addColorStop(1, '#070817');
+    f.fillStyle = corps;
+    f.fillRect(x0, C.SOL_Y, x1 - x0, 400);
+    f.strokeStyle = 'rgba(0, 229, 255, 0.12)';
+    f.beginPath();
+    for (let x = x0 + 80; x < x1; x += 80) { f.moveTo(x, C.SOL_Y); f.lineTo(x, C.SOL_Y + 400); }
+    f.stroke();
+
+    f.shadowColor = '#00e5ff';
+    f.shadowBlur = 20;
+    f.strokeStyle = '#00e5ff';
+    f.lineWidth = 4;
+    f.beginPath();
+    f.moveTo(x0, C.SOL_Y + 400);
+    f.lineTo(x0, C.SOL_Y);
+    f.lineTo(x1, C.SOL_Y);
+    f.lineTo(x1, C.SOL_Y + 400);
+    f.stroke();
+
+    // Plateformes flottantes.
+    f.shadowColor = '#ff2bd6';
+    f.strokeStyle = '#ff2bd6';
+    f.lineWidth = 5;
+    f.lineCap = 'round';
+    for (const pl of C.PLATEFORMES) {
+      f.beginPath();
+      f.moveTo(pl.x0, pl.y + 2);
+      f.lineTo(pl.x1, pl.y + 2);
+      f.stroke();
+    }
+    f.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  dessinerFond();
+
+  // ===========================================================================
+  // PERSONNAGES — de petits combattants dessinés entièrement au trait
+  // ===========================================================================
+  const FOND_CORPS = '#0b0e20';
+
+  /** Remplit puis trace le chemin courant, avec un halo néon. */
+  function forme(couleur) {
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = FOND_CORPS;
+    ctx.fill();
+    ctx.fillStyle = couleur + '48';
+    ctx.fill();
+    ctx.shadowBlur = 12;
+    ctx.stroke();
+  }
+
+  function melanger(a, b, k) {
+    return [a[0] + (b[0] - a[0]) * k, a[1] + (b[1] - a[1]) * k];
+  }
+
+  // Apparence de chaque personnage : forme de la tête, du corps, et attribut.
+  const STYLES = {
+    braise: { tete: 'rond', attribut: 'flammes' },
+    ondine: { tete: 'goutte', attribut: 'bulles', robe: true },
+    brok:   { tete: 'carre', attribut: 'cornes', large: true, grossesMains: true, sourcils: true },
+    zephyr: { tete: 'rond', attribut: 'ailes', robe: true },
+    zip:    { tete: 'rond', attribut: 'oreilles' },
+    givre:  { tete: 'hexagone', attribut: 'cristaux', large: true, anguleux: true, sourcils: true },
+  };
+
+  function dessinerPerso(j, estMoi) {
+    const S = PERSOS[j.perso] || PERSOS.ondine;
+    const l = S.l;
+    const h = S.h;
+    const e = S.taille;
+    const maintenant = performance.now();
+    const infos = (j.etat === 'attaque' || j.etat === 'charge') ? infosAttaque(j) : null;
+    const touche = j.etat === 'sonne' && j.gel > 0; // vient de prendre un coup : flash blanc
+    // Le corps prend la couleur de l'élément ; la couleur du joueur sert au
+    // nom, au repère et au panneau du bas.
+    const teinte = j.nom === 'Mannequin' ? j.couleur : ELEMENTS[S.element].couleur;
+    const style = STYLES[j.perso] || STYLES.ondine;
+    const couleur = touche ? '#ffffff' : teinte;
+
+    ctx.save();
+    ctx.translate(j.x, j.y);
+
+    // Transparence : esquive, ou clignotement pendant l'invulnérabilité.
+    if (j.etat === 'esquive') ctx.globalAlpha = 0.4;
+    else if (j.invul > 0 && Math.floor(maintenant / 70) % 2) ctx.globalAlpha = 0.4;
+
+    // --- Aura de charge ---
+    if (j.etat === 'charge') {
+      const k = Math.min(1, j.charge / C.CHARGE_MAX);
+      const rayon = h * (0.55 + 0.35 * k) + Math.sin(maintenant / 40) * 3;
+      const aura = ctx.createRadialGradient(0, -h / 2, rayon * 0.3, 0, -h / 2, rayon);
+      aura.addColorStop(0, 'rgba(255,255,255,0)');
+      aura.addColorStop(0.8, teinte + '55');
+      aura.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = aura;
+      ctx.beginPath();
+      ctx.arc(0, -h / 2, rayon, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // --- Corps (tourné et retourné selon l'action) ---
+    ctx.save();
+    let rotation = 0;
+    if (j.etat === 'sonne') {
+      rotation = j.sol ? Math.sin(maintenant / 60) * 0.35 : (maintenant / 110) * (j.vx >= 0 ? 1 : -1);
+    } else if (j.etat === 'esquive' && j.atk === 'roulade') {
+      rotation = (j.t / 24) * Math.PI * 2 * (j.vx >= 0 ? 1 : -1);
+    } else if (j.etat === 'attaque' && j.atk === 'air_neutre' && infos) {
+      rotation = (j.t / infos.total) * Math.PI * 2 * j.dir;
+    }
+    ctx.translate(0, -h / 2);
+    ctx.rotate(rotation);
+    // Petit tassement pendant l'élan du saut ou la charge.
+    const tasse = (j.elan > 0 || j.etat === 'charge') ? 0.9 : 1;
+    ctx.scale(j.dir, tasse);
+    ctx.translate(0, h / 2 / tasse);
+
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.strokeStyle = couleur;
+    ctx.shadowColor = couleur;
+
+    const rTete = l * 0.52;
+    const yTete = -h + rTete;
+    const yHautCorps = yTete + rTete * 0.75;
+    const yHanche = -h * 0.2;
+    const largeurCorps = l * (style.large ? 0.8 : 0.6);
+    const enMarche = j.sol && Math.abs(j.vx) > 0.5;
+    const pas = enMarche ? Math.sin(j.x * 0.14) : 0;
+
+    // -- Position des mains --
+    const rMain = l * (style.grossesMains ? 0.24 : 0.16);
+    const reposAvant = [l * 0.46, -h * 0.42 - pas * 4];
+    const reposArriere = [-l * 0.46, -h * 0.42 + pas * 4];
+    let mainAvant = reposAvant;
+    let mainArriere = reposArriere;
+
+    if (j.etat === 'charge') {
+      mainAvant = [-l * 0.3 + (Math.random() - 0.5) * 3, -h * 0.5 + (Math.random() - 0.5) * 3];
+    } else if (j.etat === 'bouclier') {
+      mainAvant = [l * 0.5, -h * 0.6];
+      mainArriere = [l * 0.2, -h * 0.5];
+    } else if (j.etat === 'attaque' && infos) {
+      const boites = infos.attaque.boites;
+      const position = (repos, boite) => {
+        const cible = [boite[0] * e, boite[1] * e];
+        if (j.t <= infos.debut) {
+          // Armement : la main recule un peu avant de frapper.
+          return melanger(repos, cible, -0.3 * (j.t / infos.debut));
+        }
+        if (j.t <= infos.fin) return cible;
+        return melanger(cible, repos, (j.t - infos.fin) / (infos.total - infos.fin));
+      };
+      mainAvant = position(reposAvant, boites[0]);
+      if (boites[1]) mainArriere = position(reposArriere, boites[1]);
+    }
+
+    const dessinerMain = (pos) => {
+      ctx.beginPath();
+      ctx.arc(pos[0], pos[1], rMain, 0, Math.PI * 2);
+      forme(couleur);
+    };
+
+    dessinerMain(mainArriere);
+
+    // -- Jambes --
+    const yPied = j.sol ? 0 : -h * 0.07;
+    const ecart = l * 0.16;
+    const balancement = j.sol ? pas * l * 0.32 : -l * 0.12;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.moveTo(-ecart, yHanche); ctx.lineTo(-ecart + balancement, yPied - 3);
+    ctx.moveTo(ecart, yHanche); ctx.lineTo(ecart - balancement, yPied - 3);
+    ctx.stroke();
+    for (const px of [-ecart + balancement, ecart - balancement]) {
+      ctx.beginPath();
+      ctx.ellipse(px + l * 0.06, yPied - 3, l * 0.15, 3.5, 0, 0, Math.PI * 2);
+      forme(couleur);
+    }
+
+    // -- Écharpe de Zip (derrière le corps) --
+    if (style.attribut === 'oreilles') {
+      const vent = Math.min(18, Math.abs(j.vx) * 2.5);
+      ctx.save();
+      ctx.lineWidth = 5;
+      ctx.strokeStyle = '#ffffff';
+      ctx.shadowColor = '#ffffff';
+      ctx.shadowBlur = 8;
+      ctx.beginPath();
+      ctx.moveTo(-l * 0.15, yHautCorps + 3);
+      ctx.quadraticCurveTo(
+        -l * 0.7, yHautCorps - 4 + Math.sin(maintenant / 90) * 5,
+        -l * 0.95 - vent, yHautCorps + 6 + Math.sin(maintenant / 70) * 6
+      );
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // -- Ailes de Zéphyr (derrière le corps) : elles battent plus vite en l'air --
+    if (style.attribut === 'ailes') {
+      const battement = Math.sin(maintenant / (j.sol ? 260 : 60)) * 0.4;
+      for (const k of [1, 0.7]) {
+        ctx.save();
+        ctx.translate(-l * 0.2, yHautCorps + 6);
+        ctx.rotate(0.5 + battement * k + (1 - k));
+        ctx.beginPath();
+        ctx.ellipse(-l * 0.45 * k, 0, l * 0.45 * k, l * 0.17 * k, 0, 0, Math.PI * 2);
+        forme(couleur);
+        ctx.restore();
+      }
+    }
+
+    // -- Tronc --
+    ctx.beginPath();
+    if (style.robe) {
+      // Une petite robe en trapèze.
+      ctx.moveTo(-largeurCorps * 0.35, yHautCorps);
+      ctx.lineTo(largeurCorps * 0.35, yHautCorps);
+      ctx.lineTo(largeurCorps * 0.75, yHanche + 2);
+      ctx.lineTo(-largeurCorps * 0.75, yHanche + 2);
+      ctx.closePath();
+    } else {
+      ctx.roundRect(-largeurCorps / 2, yHautCorps, largeurCorps, yHanche - yHautCorps + 3, style.anguleux ? 0 : 6);
+    }
+    forme(couleur);
+
+    // -- Attributs derrière la tête --
+    const hautTete = yTete - rTete * 0.75;
+    if (style.attribut === 'oreilles') {
+      // Zip : oreilles pointues.
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * rTete * 0.85, yTete - rTete * 0.35);
+        ctx.lineTo(s * rTete * 0.75, yTete - rTete * 1.6);
+        ctx.lineTo(s * rTete * 0.15, yTete - rTete * 0.85);
+        ctx.closePath();
+        forme(couleur);
+      }
+    } else if (style.attribut === 'cornes') {
+      // Brok : cornes.
+      for (const s of [-1, 1]) {
+        ctx.beginPath();
+        ctx.moveTo(s * rTete * 0.55, hautTete);
+        ctx.quadraticCurveTo(s * rTete * 1.5, yTete - rTete * 0.9, s * rTete * 1.25, yTete - rTete * 1.7);
+        ctx.quadraticCurveTo(s * rTete * 0.95, yTete - rTete * 1.0, s * rTete * 0.9, yTete - rTete * 0.3);
+        ctx.closePath();
+        forme(couleur);
+      }
+    } else if (style.attribut === 'flammes') {
+      // Braise : une chevelure de flammes qui danse.
+      const pas = (rTete * 1.7) / 4;
+      ctx.beginPath();
+      ctx.moveTo(-rTete * 0.85, yTete - rTete * 0.3);
+      for (let i = 0; i < 4; i++) {
+        const x0 = -rTete * 0.85 + i * pas;
+        const hauteur = rTete * (0.75 + 0.3 * Math.sin(maintenant / 80 + i * 1.9)) * (i % 2 ? 1.25 : 0.85);
+        ctx.lineTo(x0 + pas * 0.2 - rTete * 0.25, hautTete - hauteur);
+        ctx.lineTo(x0 + pas, hautTete);
+      }
+      ctx.lineTo(rTete * 0.85, yTete - rTete * 0.3);
+      ctx.closePath();
+      forme(couleur);
+    } else if (style.attribut === 'cristaux') {
+      // Givre : une couronne d'éclats de glace.
+      for (const [dx, hauteur, demi] of [[-0.55, 0.8, 0.2], [0, 1.25, 0.24], [0.55, 0.9, 0.2]]) {
+        ctx.beginPath();
+        ctx.moveTo((dx - demi) * rTete, hautTete);
+        ctx.lineTo((dx + 0.1) * rTete, hautTete - hauteur * rTete);
+        ctx.lineTo((dx + demi) * rTete, hautTete);
+        ctx.closePath();
+        forme(couleur);
+      }
+    } else if (style.attribut === 'ailes') {
+      // Zéphyr : un anneau de vent au-dessus de la tête.
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.ellipse(0, yTete - rTete * 1.4 + Math.sin(maintenant / 220) * 2, rTete * 0.62, rTete * 0.18, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (style.attribut === 'bulles') {
+      // Ondine : deux bulles qui flottent derrière elle.
+      ctx.shadowBlur = 8;
+      for (const [dx, dy, r, v] of [[-1.35, -0.9, 4.5, 260], [-1.1, -1.55, 3, 190]]) {
+        ctx.beginPath();
+        ctx.arc(dx * rTete, yTete + dy * rTete + Math.sin(maintenant / v) * 4, r, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+
+    // -- Tête --
+    ctx.beginPath();
+    if (style.tete === 'carre') {
+      ctx.roundRect(-rTete, yTete - rTete * 0.9, rTete * 2, rTete * 1.8, rTete * 0.55);
+    } else if (style.tete === 'goutte') {
+      // Une goutte d'eau, la pointe vers le haut et un peu en arrière.
+      ctx.moveTo(-rTete * 0.25, yTete - rTete * 1.8);
+      ctx.quadraticCurveTo(rTete * 0.95, yTete - rTete * 0.85, rTete, yTete);
+      ctx.arc(0, yTete, rTete, 0, Math.PI);
+      ctx.quadraticCurveTo(-rTete * 0.95, yTete - rTete * 0.8, -rTete * 0.25, yTete - rTete * 1.8);
+      ctx.closePath();
+    } else if (style.tete === 'hexagone') {
+      for (let i = 0; i < 6; i++) {
+        const a = -Math.PI / 2 + (i * Math.PI) / 3;
+        ctx.lineTo(Math.cos(a) * rTete * 1.08, yTete + Math.sin(a) * rTete * 1.08);
+      }
+      ctx.closePath();
+    } else {
+      ctx.arc(0, yTete, rTete, 0, Math.PI * 2);
+    }
+    forme(couleur);
+
+    // -- Yeux --
+    const xYeux = rTete * 0.28;
+    const ecartYeux = rTete * 0.3;
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 8;
+    if (j.etat === 'sonne') {
+      // Yeux en croix quand on est sonné.
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      for (const ox of [xYeux - ecartYeux, xYeux + ecartYeux]) {
+        ctx.moveTo(ox - 4, yTete - 4); ctx.lineTo(ox + 4, yTete + 4);
+        ctx.moveTo(ox + 4, yTete - 4); ctx.lineTo(ox - 4, yTete + 4);
+      }
+      ctx.stroke();
+    } else {
+      const concentre = j.etat === 'attaque' || j.etat === 'charge' || j.etat === 'bouclier';
+      ctx.fillStyle = '#ffffff';
+      for (const ox of [xYeux - ecartYeux, xYeux + ecartYeux]) {
+        ctx.beginPath();
+        ctx.ellipse(ox, yTete, rTete * 0.14, rTete * (concentre ? 0.15 : 0.27), 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (style.sourcils) {
+        // Sourcils froncés.
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(xYeux - ecartYeux - 6, yTete - rTete * 0.5);
+        ctx.lineTo(xYeux + ecartYeux + 6, yTete - rTete * 0.28);
+        ctx.stroke();
+      }
+    }
+    ctx.strokeStyle = couleur;
+    ctx.shadowColor = couleur;
+    ctx.lineWidth = 3;
+
+    dessinerMain(mainAvant);
+    ctx.restore(); // fin du corps tourné
+
+    // --- Traînée lumineuse du coup, pendant qu'il est actif ---
+    if (j.etat === 'attaque' && infos && j.t > infos.debut && j.t <= infos.fin + 2) {
+      const k = Math.max(0, 1 - (j.t - infos.debut) / (infos.fin - infos.debut + 2));
+      for (const [bx, by, rayon] of infos.attaque.boites) {
+        const cx = bx * e * j.dir;
+        const cy = by * e;
+        const r = rayon * e;
+        const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        halo.addColorStop(0, 'rgba(255,255,255,' + (0.75 * k) + ')');
+        halo.addColorStop(0.5, teinte + '88');
+        halo.addColorStop(1, teinte + '00');
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // --- Bulle du bouclier (rétrécit quand le bouclier s'use) ---
+    if (j.etat === 'bouclier') {
+      const r = h * 0.72 * (0.45 + 0.55 * Math.max(0, j.bouclier) / C.BOUCLIER_MAX);
+      ctx.shadowColor = teinte;
+      ctx.shadowBlur = 18;
+      ctx.fillStyle = teinte + '33';
+      ctx.strokeStyle = teinte;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, -h / 2, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    // --- Nom au-dessus de la tête ---
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = '#000000';
+    ctx.shadowBlur = 4;
+    ctx.fillStyle = j.couleur;
+    ctx.font = 'bold 15px "Trebuchet MS", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(j.nom, 0, -h - rTete * 0.9 - 14);
+    if (estMoi) {
+      // Petit triangle pour repérer son propre personnage.
+      ctx.fillStyle = j.couleur;
+      ctx.beginPath();
+      ctx.moveTo(-7, -h - rTete * 0.9 - 9);
+      ctx.lineTo(7, -h - rTete * 0.9 - 9);
+      ctx.lineTo(0, -h - rTete * 0.9);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // ===========================================================================
+  // EFFETS : mise à jour et dessin
+  // ===========================================================================
+  function dessinerEffets(dt) {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // Faisceaux d'éjection.
+    for (const r of rayons) {
+      r.vie -= dt;
+      const k = Math.max(0, r.vie / r.max);
+      ctx.save();
+      ctx.translate(r.x, r.y);
+      ctx.rotate(r.angle);
+      const longueur = 1500;
+      const largeur = 90 * k;
+      const degrade = ctx.createLinearGradient(0, 0, longueur, 0);
+      degrade.addColorStop(0, '#ffffff');
+      degrade.addColorStop(0.15, r.couleur);
+      degrade.addColorStop(1, r.couleur + '00');
+      ctx.globalAlpha = k;
+      ctx.fillStyle = degrade;
+      ctx.beginPath();
+      ctx.moveTo(-40, -largeur);
+      ctx.lineTo(longueur, -largeur * 0.15);
+      ctx.lineTo(longueur, largeur * 0.15);
+      ctx.lineTo(-40, largeur);
+      ctx.fill();
+      ctx.restore();
+    }
+    rayons = rayons.filter((r) => r.vie > 0);
+
+    // Anneaux.
+    for (const o of ondes) {
+      o.vie -= dt;
+      o.r += o.vr * dt;
+      ctx.globalAlpha = Math.max(0, o.vie / o.max);
+      ctx.strokeStyle = o.couleur;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(o.x, o.y, o.r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ondes = ondes.filter((o) => o.vie > 0);
+
+    // Particules.
+    for (const p of particules) {
+      p.vie -= dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= 0.94;
+      p.vy = p.vy * 0.94 + 0.12 * dt;
+      const k = Math.max(0, p.vie / p.max);
+      ctx.globalAlpha = k;
+      ctx.fillStyle = p.couleur;
+      ctx.fillRect(p.x - p.taille / 2, p.y - p.taille / 2, p.taille * (0.5 + k), p.taille * (0.5 + k));
+    }
+    particules = particules.filter((p) => p.vie > 0);
+    if (particules.length > 700) particules.splice(0, particules.length - 700);
+
+    ctx.restore();
+  }
+
+  // ===========================================================================
+  // INTERFACE : pourcentages et vies
+  // ===========================================================================
+  function couleurDegats(degats) {
+    // Blanc -> jaune -> rouge sombre à mesure que les dégâts montent.
+    const k = Math.min(1, degats / 150);
+    const teinte = 55 - 55 * k;
+    const lum = 95 - 45 * Math.min(1, degats / 60) - 12 * k;
+    return 'hsl(' + teinte + ', 100%, ' + lum + '%)';
+  }
+
+  function dessinerInterface(joueurs) {
+    const n = joueurs.length;
+    if (n === 0) return;
+    const largeur = Math.min(210, (C.LARGEUR - 40) / n);
+    const depart = (C.LARGEUR - largeur * n) / 2;
+
+    joueurs.forEach((j, i) => {
+      const x = depart + i * largeur + largeur / 2;
+      const y = C.HAUTEUR - 22;
+      ctx.save();
+      ctx.textAlign = 'center';
+
+      // Fond du panneau.
+      ctx.fillStyle = 'rgba(6, 8, 22, 0.72)';
+      ctx.strokeStyle = j.couleur;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = j.couleur;
+      ctx.shadowBlur = j.id === monId ? 16 : 6;
+      ctx.beginPath();
+      ctx.roundRect(x - largeur / 2 + 8, y - 66, largeur - 16, 78, 10);
+      ctx.fill();
+      ctx.stroke();
+
+      // Pourcentage.
+      ctx.shadowColor = '#000';
+      ctx.shadowBlur = 4;
+      ctx.font = 'bold 36px "Trebuchet MS", sans-serif';
+      ctx.fillStyle = couleurDegats(j.degats);
+      ctx.fillText(j.degats + '%', x, y - 24);
+
+      // Nom et personnage.
+      ctx.font = 'bold 12px "Trebuchet MS", sans-serif';
+      ctx.fillStyle = '#c3cdf5';
+      const P = PERSOS[j.perso];
+      const perso = P ? P.nom + ' (' + ELEMENTS[P.element].nom + ')' : '';
+      ctx.fillText(j.nom + ' · ' + perso, x, y - 6);
+
+      // Vies.
+      ctx.shadowColor = j.couleur;
+      ctx.shadowBlur = 8;
+      for (let v = 0; v < C.VIES; v++) {
+        ctx.beginPath();
+        ctx.arc(x + (v - (C.VIES - 1) / 2) * 16, y + 4, 4.5, 0, Math.PI * 2);
+        if (v < j.vies) { ctx.fillStyle = j.couleur; ctx.fill(); }
+        else { ctx.strokeStyle = j.couleur + '66'; ctx.lineWidth = 1.5; ctx.stroke(); }
+      }
+      ctx.restore();
+    });
+  }
+
+  /** Repère au bord de l'écran pour un joueur sorti du champ mais pas encore éjecté. */
+  function dessinerHorsChamp(j) {
+    const sx = j.x * ZOOM + CAM_X;
+    const sy = (j.y - 30) * ZOOM + CAM_Y;
+    if (sx > 0 && sx < C.LARGEUR && sy > 0 && sy < C.HAUTEUR) return;
+    const bx = Math.max(26, Math.min(C.LARGEUR - 26, sx));
+    const by = Math.max(26, Math.min(C.HAUTEUR - 110, sy));
+    ctx.save();
+    ctx.shadowColor = j.couleur;
+    ctx.shadowBlur = 14;
+    ctx.strokeStyle = j.couleur;
+    ctx.fillStyle = 'rgba(6, 8, 22, 0.8)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(bx, by, 16, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = j.couleur;
+    ctx.font = 'bold 14px "Trebuchet MS", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('!', bx, by + 5);
+    ctx.restore();
+  }
+
+  // ===========================================================================
+  // BOUCLE PRINCIPALE
+  // ===========================================================================
+  const DUREE_TICK_MS = 1000 / C.TICK_HZ;
+  let dernierTemps = performance.now();
+  let accumulateur = 0;
+
+  function boucle(maintenant) {
+    const ecoule = Math.min(250, maintenant - dernierTemps);
+    dernierTemps = maintenant;
+    accumulateur += ecoule;
+    while (accumulateur >= DUREE_TICK_MS) {
+      tickLocal();
+      accumulateur -= DUREE_TICK_MS;
+    }
+    // Fraction du tick en cours : affichage fluide même sur un écran > 60 Hz.
+    const alpha = accumulateur / DUREE_TICK_MS;
+    const dt = ecoule / DUREE_TICK_MS; // durée de la frame, en ticks
+
+    // L'écart de correction fond progressivement.
+    erreur.x *= 0.85;
+    erreur.y *= 0.85;
+
+    // --- Liste des joueurs à afficher ---
+    const joueurs = joueursInterpoles();
+    for (const j of joueurs) {
+      if (j.id === monId && moi.connu) {
+        // Le joueur local est affiché à sa position PRÉDITE, pas à celle du passé.
+        for (const champ of physics.CHAMPS) j[champ] = moi[champ];
+        if (moi.gel === 0) {
+          j.x = precedent.x + (moi.x - precedent.x) * alpha + erreur.x;
+          j.y = precedent.y + (moi.y - precedent.y) * alpha + erreur.y;
+        }
+      }
+    }
+
+    // --- Tremblement d'écran ---
+    let dx = 0;
+    let dy = 0;
+    if (secousse > 0.3) {
+      dx = (Math.random() - 0.5) * 2 * secousse;
+      dy = (Math.random() - 0.5) * 2 * secousse;
+      secousse *= Math.pow(0.88, dt);
+    } else {
+      secousse = 0;
+    }
+
+    // --- Dessin ---
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = '#05060d';
+    ctx.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
+    ctx.drawImage(fond, dx, dy);
+
+    ctx.setTransform(ZOOM, 0, 0, ZOOM, CAM_X + dx, CAM_Y + dy);
+    const vivants = joueurs.filter((j) => j.etat !== 'mort');
+    for (const j of vivants) {
+      // Traînée derrière un joueur éjecté à grande vitesse.
+      if (j.etat === 'sonne' && Math.hypot(j.vx, j.vy) > 8) {
+        const S = PERSOS[j.perso] || PERSOS.ondine;
+        const vie = 16;
+        particules.push({
+          x: j.x + (Math.random() - 0.5) * 14, y: j.y - S.h / 2 + (Math.random() - 0.5) * 14,
+          vx: 0, vy: 0, vie, max: vie, couleur: j.couleur, taille: 7,
+        });
+      }
+    }
+    for (const j of vivants) {
+      // Petites flammes sur un joueur qui brûle.
+      if (j.brulure && Math.random() < 0.6 * dt) {
+        const S = PERSOS[j.perso] || PERSOS.ondine;
+        const vie = 14 + Math.random() * 10;
+        particules.push({
+          x: j.x + (Math.random() - 0.5) * S.l, y: j.y - Math.random() * S.h,
+          vx: 0, vy: -1.5 - Math.random() * 1.5, vie, max: vie,
+          couleur: Math.random() < 0.5 ? '#ff6a2b' : '#ffd34a', taille: 4,
+        });
+      }
+    }
+    // Le joueur local est dessiné en dernier, par-dessus les autres.
+    for (const j of vivants) if (j.id !== monId) dessinerPerso(j, false);
+    for (const j of vivants) if (j.id === monId) dessinerPerso(j, true);
+    dessinerEffets(dt);
+
+    // --- Interface (coordonnées écran) ---
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    for (const j of vivants) dessinerHorsChamp(j);
+    dessinerInterface(joueurs);
+    if (flash > 0.01) {
+      ctx.fillStyle = 'rgba(255,255,255,' + flash + ')';
+      ctx.fillRect(0, 0, C.LARGEUR, C.HAUTEUR);
+      flash *= Math.pow(0.85, dt);
+    }
+
+    requestAnimationFrame(boucle);
+  }
+
+  // Petit accès pour les tests automatiques (lecture seule).
+  window.__nb = {
+    moi,
+    etat: () => (historique.length ? [...historique[historique.length - 1].joueurs.values()] : []),
+  };
+
+  connecter();
+  requestAnimationFrame(boucle);
+})();
+</script>
+</body>
+</html>`;
+
+// #############################################################################
+// PARTIE 3 — SERVEUR  (fichier d'origine : server.js)
+// #############################################################################
+MODULES['serveur'] = function (module, exports, require, __dirname) {
+    // =============================================================================
+    // server.js — Serveur de Neon Brawl.
+    //
+    // Rôles :
+    //   1. Servir la page du jeu (un seul fichier : public/index.html).
+    //   2. Accepter les connexions WebSocket des joueurs.
+    //   3. Faire tourner la simulation à 60 Hz : le serveur fait AUTORITÉ, les
+    //      navigateurs n'envoient que leurs touches.
+    //   4. Diffuser l'état du jeu 30 fois par seconde.
+    //
+    // Mode de jeu actuel : « arène libre ». Tous les joueurs connectés se battent
+    // ensemble ; quand un joueur a perdu ses 3 vies il repart avec 3 vies neuves.
+    // Un joueur seul affronte un mannequin d'entraînement immobile.
+    // (Le lobby et le tournoi arrivent à l'étape suivante.)
+    // =============================================================================
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+    const http = require('http');
+    const express = require('express');
+    const { WebSocketServer } = require('ws');
+
+    const C = require('./game/constants');
+    const { PERSOS } = require('./game/characters');
+    const physics = require('./game/physics');
+    const combat = require('./game/combat');
+
+    const PORT = Number(process.env.PORT) || 3000;
+    const HOTE = '0.0.0.0'; // écoute sur toutes les cartes réseau (accès depuis le LAN)
+
+    // -----------------------------------------------------------------------------
+    // Page du jeu
+    // -----------------------------------------------------------------------------
+    // Le client est UN SEUL fichier HTML. Pour que le navigateur prédise les
+    // mouvements avec exactement le même code que le serveur, on injecte dans la
+    // page les fichiers partagés de game/ à la place du marqueur <!--NB_PARTAGE-->.
+    // Ainsi il n'y a aucune duplication de code et toujours une seule page servie.
+    const FICHIERS_PARTAGES = ['constants.js', 'characters.js', 'physics.js'];
+
+    function construirePage() {
+      const page = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+      const scripts = FICHIERS_PARTAGES
+        .map((nom) => {
+          const code = fs.readFileSync(path.join(__dirname, 'game', nom), 'utf8');
+          return `<script>\n// ---- game/${nom} (injecté par le serveur) ----\n${code}\n</script>`;
+        })
+        .join('\n');
+      return page.replace('<!--NB_PARTAGE-->', () => scripts);
+    }
+
+    const app = express();
+    app.get(['/', '/index.html'], (req, res) => {
+      // Reconstruit à chaque requête : pratique pendant le développement,
+      // et le coût est négligeable.
+      res.set('Cache-Control', 'no-store');
+      res.type('html').send(construirePage());
+    });
+    app.use(express.static(path.join(__dirname, 'public')));
+
+    const serveurHttp = http.createServer(app);
+    const wss = new WebSocketServer({ server: serveurHttp });
+
+    // -----------------------------------------------------------------------------
+    // Joueurs
+    // -----------------------------------------------------------------------------
+    const COULEURS = ['#00e5ff', '#ff2bd6', '#ffb300', '#6bff4a', '#b388ff', '#ff5252', '#40ffc8', '#ff8a3d'];
+    const LISTE_PERSOS = Object.keys(PERSOS);
+    const joueurs = new Map(); // id -> joueur (humains et mannequin)
+    let prochainId = 1;
+    let mannequin = null;
+
+    const CENTRE_X = (C.BLOC.x0 + C.BLOC.x1) / 2;
+
+    /** Point d'apparition : alternativement à gauche et à droite du centre. */
+    function xApparition(joueur) {
+      return CENTRE_X + (joueur.id % 2 === 1 ? -200 : 200);
+    }
+
+    function couleurLibre() {
+      const prises = new Set([...joueurs.values()].map((j) => j.couleur));
+      return COULEURS.find((c) => !prises.has(c)) || COULEURS[0];
+    }
+
+    function creerJoueur(socket) {
+      const id = prochainId++;
+      const joueur = {
+        id,
+        socket,                 // null pour le mannequin
+        nom: `Joueur ${id}`,
+        couleur: couleurLibre(),
+        perso: LISTE_PERSOS[(id - 1) % LISTE_PERSOS.length],
+        degats: 0,
+        brulure: 0,             // ticks de brûlure restants (élément feu)
+        vies: C.VIES,
+        touches: 0,             // dernières touches appliquées
+        file: [],               // inputs reçus, pas encore simulés
+        acquitte: 0,            // numéro du dernier input simulé (renvoyé au client)
+        retour: 0,              // compte à rebours avant réapparition
+        ...physics.nouvelEtat(0, 0),
+      };
+      combat.reapparaitre(joueur, xApparition(joueur));
+      joueur.invul = 60;
+      joueurs.set(id, joueur);
+      return joueur;
+    }
+
+    /** Le mannequin se tient au sol, au milieu de l'arène. */
+    function placerMannequin() {
+      combat.reapparaitre(mannequin, CENTRE_X + 120, C.SOL_Y - 1);
+      mannequin.dir = -1;
+    }
+
+    /** Un joueur seul a droit à un mannequin d'entraînement ; à deux ou plus, il s'en va. */
+    function ajusterMannequin() {
+      const humains = [...joueurs.values()].filter((j) => j.socket).length;
+      if (humains === 1 && !mannequin) {
+        mannequin = creerJoueur(null);
+        mannequin.nom = 'Mannequin';
+        mannequin.couleur = '#9aa4c7';
+        mannequin.perso = 'ondine';
+        placerMannequin();
+      } else if (humains !== 1 && mannequin) {
+        joueurs.delete(mannequin.id);
+        mannequin = null;
+      }
+    }
+
+    function envoyer(socket, message) {
+      if (socket.readyState === socket.OPEN) socket.send(JSON.stringify(message));
+    }
+
+    wss.on('connection', (socket) => {
+      const joueur = creerJoueur(socket);
+      ajusterMannequin();
+      console.log(`[+] ${joueur.nom} connecté`);
+      envoyer(socket, { t: 'bienvenue', id: joueur.id });
+
+      socket.on('message', (donnees) => {
+        let msg;
+        try {
+          msg = JSON.parse(donnees);
+        } catch {
+          return; // message illisible : on l'ignore
+        }
+        // Le client n'envoie QUE ses touches ; il ne peut pas imposer sa position.
+        if (msg.t === 'input' && Number.isInteger(msg.seq) && Number.isInteger(msg.touches)) {
+          if (joueur.file.length < 120) {
+            joueur.file.push({ seq: msg.seq, touches: msg.touches & C.MASQUE_TOUCHES });
+          }
+        } else if (msg.t === 'perso' && LISTE_PERSOS.includes(msg.perso)) {
+          joueur.perso = msg.perso;
+        }
+      });
+
+      socket.on('close', () => {
+        joueurs.delete(joueur.id);
+        ajusterMannequin();
+        console.log(`[-] ${joueur.nom} déconnecté`);
+      });
+
+      socket.on('error', () => {});
+    });
+
+    // -----------------------------------------------------------------------------
+    // Boucle de jeu à pas fixe
+    // -----------------------------------------------------------------------------
+    let tick = 0;
+    let evenements = []; // coups, éjections… accumulés jusqu'au prochain envoi
+
+    function consommerInput(joueur) {
+      const input = joueur.file.shift();
+      if (!input) return; // rien reçu ce tick-ci : on garde les dernières touches
+      joueur.touches = input.touches;
+      joueur.acquitte = input.seq;
+    }
+
+    function avancerSimulation() {
+      tick++;
+      const liste = [...joueurs.values()];
+
+      // 1. Chaque joueur avance selon ses touches.
+      for (const joueur of liste) {
+        consommerInput(joueur);
+        physics.avancerJoueur(joueur, joueur.touches);
+        // Si le réseau a livré un paquet d'inputs en retard, on rattrape
+        // progressivement pour ne pas accumuler de latence.
+        if (joueur.file.length > 4) {
+          consommerInput(joueur);
+          physics.avancerJoueur(joueur, joueur.touches);
+        }
+      }
+
+      // 2. Les coups, puis les sorties d'écran.
+      combat.resoudreCoups(liste, evenements);
+      combat.effetsContinus(liste);
+      const prets = combat.gererSorties(liste, evenements);
+
+      // 3. Arène libre : tout le monde revient, avec 3 vies neuves si besoin.
+      for (const joueur of prets) {
+        if (joueur.vies <= 0) joueur.vies = C.VIES;
+        if (joueur === mannequin) placerMannequin();
+        else combat.reapparaitre(joueur, xApparition(joueur));
+      }
+
+      if (tick % C.ETAT_TOUS_LES === 0) diffuserEtat();
+    }
+
+    const arrondi = (n) => Math.round(n * 100) / 100;
+
+    function diffuserEtat() {
+      const etat = {
+        t: 'etat',
+        tick,
+        ev: evenements,
+        joueurs: [...joueurs.values()].map((j) => {
+          const s = {
+            id: j.id, nom: j.nom, couleur: j.couleur, perso: j.perso,
+            degats: Math.round(j.degats), vies: j.vies, acq: j.acquitte,
+            brulure: j.brulure > 0 ? 1 : 0,
+          };
+          for (const champ of physics.CHAMPS) {
+            s[champ] = typeof j[champ] === 'number' ? arrondi(j[champ]) : j[champ];
+          }
+          return s;
+        }),
+      };
+      evenements = [];
+      const texte = JSON.stringify(etat);
+      for (const joueur of joueurs.values()) {
+        if (joueur.socket && joueur.socket.readyState === joueur.socket.OPEN) joueur.socket.send(texte);
+      }
+    }
+
+    // setInterval n'est pas précis à la milliseconde : on mesure le temps réellement
+    // écoulé et on exécute autant de ticks que nécessaire (accumulateur).
+    const DUREE_TICK_MS = 1000 / C.TICK_HZ;
+    let dernierTemps = process.hrtime.bigint();
+    let accumulateur = 0;
+
+    setInterval(() => {
+      const maintenant = process.hrtime.bigint();
+      accumulateur += Number(maintenant - dernierTemps) / 1e6;
+      dernierTemps = maintenant;
+      // Garde-fou : après un gros blocage, on ne rejoue pas des secondes entières.
+      if (accumulateur > 250) accumulateur = 250;
+      while (accumulateur >= DUREE_TICK_MS) {
+        avancerSimulation();
+        accumulateur -= DUREE_TICK_MS;
+      }
+    }, 4);
+
+    // -----------------------------------------------------------------------------
+    // Démarrage
+    // -----------------------------------------------------------------------------
+    function adressesLocales() {
+      const adresses = [];
+      for (const cartes of Object.values(os.networkInterfaces())) {
+        for (const carte of cartes || []) {
+          if (carte.family === 'IPv4' && !carte.internal) adresses.push(carte.address);
+        }
+      }
+      return adresses;
+    }
+
+    serveurHttp.listen(PORT, HOTE, () => {
+      console.log('==============================================');
+      console.log('  NEON BRAWL — serveur démarré');
+      console.log('==============================================');
+      console.log(`  Sur cette machine : http://localhost:${PORT}`);
+      const ips = adressesLocales();
+      if (ips.length === 0) {
+        console.log('  Aucune adresse réseau trouvée (carte réseau déconnectée ?)');
+      }
+      for (const ip of ips) {
+        console.log(`  Pour les autres joueurs du réseau : http://${ip}:${PORT}`);
+      }
+      console.log('==============================================');
+    });
+};
+
+// #############################################################################
+// PARTIE 4 — DÉMARRAGE
+// Petit mécanisme qui relie les parties entre elles, puis lance le serveur.
+// #############################################################################
+const dejaCharges = {};
+
+/** Remplace « require » : sert les modules de ce fichier, sinon ceux de Node. */
+function charger(nom) {
+  const cle = nom.replace(/^\.\/(game\/)?/, '');
+  if (nom === 'fs') return faussesLectures;
+  if (!MODULES[cle]) return require(nom);
+  if (!dejaCharges[cle]) {
+    const module = { exports: {} };
+    dejaCharges[cle] = module;
+    MODULES[cle](module, module.exports, charger, __dirname);
+  }
+  return dejaCharges[cle].exports;
+}
+
+// Le serveur croit lire des fichiers sur le disque : on lui donne à la place
+// le contenu rangé dans ce fichier.
+const faussesLectures = {
+  readFileSync(chemin) {
+    const nom = require('path').basename(chemin);
+    if (nom === 'index.html') return PAGE_WEB;
+    const cle = nom.replace(/\.js$/, '');
+    if (MODULES[cle]) return '(' + MODULES[cle].toString() + ')();';
+    return require('fs').readFileSync(chemin, 'utf8');
+  },
+};
+
+charger('serveur');
