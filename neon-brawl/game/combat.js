@@ -2,7 +2,8 @@
 // combat.js — Interactions entre joueurs (serveur uniquement).
 //
 //   - détection des coups (zone de frappe contre corps adverse)
-//   - dégâts, éjection, hitstun, hit freeze, bouclier
+//   - dégâts, éjection, hitstun, hit freeze, bouclier, attrape
+//   - effets des éléments
 //   - sorties d'écran (perte d'une vie) et réapparition
 //
 // Les navigateurs ne calculent jamais rien de tout ça : ils reçoivent le
@@ -63,26 +64,43 @@ function resoudreCoups(joueurs, evenements) {
     }
   }
 
-  for (const coup of coups) appliquerCoup(coup, evenements);
+  for (const { a, v, infos, cx, cy } of coups) {
+    const source = {
+      id: a.id, joueur: a, x: a.x, dir: a.dir, charge: a.charge,
+      element: infos.perso.element, puissance: infos.perso.puissance,
+    };
+    frapper(v, infos.attaque, source, evenements, cx, cy);
+  }
 }
 
-function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
-  const { attaque, perso } = infos;
-  const element = perso.element;
+/**
+ * Applique un coup à la victime v. Sert aux attaques au corps à corps comme
+ * aux projectiles et aux zones (voir capacites.js).
+ * @param {object} v       la victime
+ * @param {object} def     le coup : deg, base, ech, angle, et options
+ *                         (deuxCotes, attrape, fige, sansGel)
+ * @param {object} source  { id, x, dir, element, puissance, charge, joueur }
+ *                         « joueur » n'est renseigné que pour un coup au corps à corps
+ * @param {number} cx, cy  centre de la zone de frappe
+ */
+function frapper(v, def, source, evenements, cx, cy) {
+  const a = source.joueur || null;
+  const element = source.element;
   // Une attaque chargée à fond fait 40 % de dégâts en plus et éjecte plus loin.
-  const charge = Math.min(1, a.charge / C.CHARGE_MAX);
-  const degats = attaque.deg * perso.puissance * (1 + 0.4 * charge);
+  const charge = Math.min(1, (source.charge || 0) / C.CHARGE_MAX);
+  const degats = def.deg * source.puissance * (1 + 0.4 * charge);
   const sv = PERSOS[v.perso] || PERSOS.ondine;
   // Point d'impact, à mi-chemin entre la zone de frappe et la victime.
-  const ix = (cx + v.x) / 2;
-  const iy = (cy + v.y - sv.h / 2) / 2;
+  const ix = Math.round((cx + v.x) / 2);
+  const iy = Math.round((cy + v.y - sv.h / 2) / 2);
 
-  // --- Coup paré par le bouclier ---
-  if (v.etat === 'bouclier') {
+  // --- Coup paré par le bouclier (l'attrape, elle, passe au travers) ---
+  if (v.etat === 'bouclier' && !def.attrape) {
     // Terre : les coups de terre usent le bouclier bien plus vite.
     v.bouclier -= degats * (element === 'terre' ? 2.2 : 1.3);
-    v.vx = (v.x >= a.x ? 1 : -1) * 2.5;
-    a.gel = v.gel = 4;
+    v.vx = (v.x >= source.x ? 1 : -1) * 2.5;
+    v.gel = 4;
+    if (a) a.gel = 4;
     if (v.bouclier <= 0) {
       physics.briserBouclier(v);
       evenements.push({ t: 'brise', x: v.x, y: v.y - sv.h / 2, id: v.id });
@@ -92,16 +110,40 @@ function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
     return;
   }
 
-  // --- Coup reçu ---
   v.degats += degats;
-  // Eau : une poussée de base plus forte.
-  const base = attaque.base + (element === 'eau' ? 1.3 : 0);
-  const ejection = ((base + v.degats * attaque.ech) * (1 + 0.3 * charge)) / sv.poids;
+  v.rapide = false;
+  v.elan = 0;
 
-  const cote = attaque.deuxCotes ? (v.x === a.x ? a.dir : Math.sign(v.x - a.x)) : a.dir;
+  // --- Gel complet (piège de givre) : la victime reste figée sur place ---
+  if (def.fige) {
+    physics.changerEtat(v, 'sonne');
+    v.sonne = def.fige;
+    v.vx = 0;
+    v.vy = 0;
+    evenements.push({ t: 'coup', x: ix, y: iy, f: 8, id: v.id, de: source.id, el: element });
+    return;
+  }
+
+  let cote = def.deuxCotes ? (v.x === source.x ? source.dir : Math.sign(v.x - source.x)) : source.dir;
+
+  // --- Attrape : on saisit l'adversaire, puis on le projette ---
+  if (def.attrape && a) {
+    // En maintenant la direction opposée, on le jette derrière soi.
+    const arriere = a.dir > 0 ? C.TOUCHE.GAUCHE : C.TOUCHE.DROITE;
+    if (a.touches & arriere) cote = -cote;
+    const sa = PERSOS[a.perso] || PERSOS.ondine;
+    v.x = a.x + a.dir * (sa.l / 2 + sv.l / 2);
+    v.y = a.y;
+    v.sol = a.sol;
+  }
+
+  // Eau : une poussée de base plus forte.
+  const base = def.base + (element === 'eau' ? 1.3 : 0);
+  const ejection = ((base + v.degats * def.ech) * (1 + 0.3 * charge)) / sv.poids;
+
   // Air : les coups qui partent vers l'avant envoient plus haut.
-  const releve = element === 'air' && attaque.angle >= 0 && attaque.angle < 75 ? 14 : 0;
-  const angle = ((attaque.angle + releve) * Math.PI) / 180;
+  const releve = element === 'air' && def.angle >= 0 && def.angle < 75 ? 14 : 0;
+  const angle = ((def.angle + releve) * Math.PI) / 180;
   v.vx = Math.cos(angle) * ejection * cote;
   v.vy = -Math.sin(angle) * ejection;
   // Frappé vers le bas alors qu'on est au sol : on rebondit.
@@ -110,15 +152,15 @@ function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
 
   physics.changerEtat(v, 'sonne');
   v.sonne = Math.min(100, Math.round(ejection * 2.4) + 6);
-  v.rapide = false;
-  v.elan = 0;
-  v.dir = -cote || v.dir; // la victime fait face à l'attaquant
+  v.dir = -cote || v.dir; // la victime fait face au coup
 
-  // Hit freeze : les deux joueurs se figent un court instant, d'autant plus
-  // longtemps que le coup est fort.
-  const gel = Math.max(3, Math.min(14, Math.round(3 + degats / 2)));
-  a.gel = gel;
+  // Hit freeze : les joueurs se figent un court instant, d'autant plus
+  // longtemps que le coup est fort. Une attrape tient l'adversaire un moment.
+  let gel = Math.max(3, Math.min(14, Math.round(3 + degats / 2)));
+  if (def.attrape) gel = 16;
+  if (def.sansGel) gel = 0;
   v.gel = gel;
+  if (a) a.gel = gel;
 
   // --- Effets des autres éléments ---
   if (element === 'feu') v.brulure = 120;                       // brûle pendant 2 s
@@ -127,10 +169,19 @@ function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
 
   evenements.push({
     t: 'coup',
-    x: Math.round(ix), y: Math.round(iy),
+    x: ix, y: iy,
     f: Math.round(ejection * 10) / 10,   // force, pour doser les effets
-    id: v.id, de: a.id, el: element,
+    id: v.id, de: source.id, el: element,
   });
+}
+
+/** Effets qui durent dans le temps : la brûlure du feu (+3 % en 2 secondes). */
+function effetsContinus(joueurs) {
+  for (const p of joueurs) {
+    if (!(p.brulure > 0) || p.etat === 'mort') continue;
+    p.brulure--;
+    if (p.brulure % 20 === 0) p.degats += 0.5;
+  }
 }
 
 /**
@@ -164,15 +215,6 @@ function gererSorties(joueurs, evenements) {
   return prets;
 }
 
-/** Effets qui durent dans le temps : la brûlure du feu (+3 % en 2 secondes). */
-function effetsContinus(joueurs) {
-  for (const p of joueurs) {
-    if (!(p.brulure > 0) || p.etat === 'mort') continue;
-    p.brulure--;
-    if (p.brulure % 20 === 0) p.degats += 0.5;
-  }
-}
-
 /** Remet un joueur en jeu au-dessus de l'arène, brièvement invulnérable. */
 function reapparaitre(p, x, y = 140) {
   const garde = { nAtk: p.nAtk, prev: p.prev };
@@ -184,4 +226,4 @@ function reapparaitre(p, x, y = 140) {
   p.dir = x < (C.BLOC.x0 + C.BLOC.x1) / 2 ? 1 : -1;
 }
 
-module.exports = { resoudreCoups, effetsContinus, gererSorties, reapparaitre };
+module.exports = { cercleToucheCorps, resoudreCoups, frapper, effetsContinus, gererSorties, reapparaitre };

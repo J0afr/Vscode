@@ -39,6 +39,7 @@
     'nAtk',                 // compteur d'attaques lancées
     'sonne',                // ticks restants sans contrôle après un coup
     'elan',                 // compte à rebours avant le décollage
+    'cd1', 'cd2',           // temps de recharge des deux capacités
   ];
 
   /** État de simulation d'un joueur neuf, placé en (x, y). */
@@ -47,7 +48,7 @@
       x, y, vx: 0, vy: 0, dir: 1, sol: false, sauts: 1,
       etat: 'libre', t: 0, atk: '', charge: 0, bouclier: C.BOUCLIER_MAX,
       gel: 0, invul: 0, traverse: 0, prev: 0, course: 0,
-      rapide: false, esqAir: false, nAtk: 0, sonne: 0, elan: 0,
+      rapide: false, esqAir: false, nAtk: 0, sonne: 0, elan: 0, cd1: 0, cd2: 0,
     };
   }
 
@@ -95,6 +96,20 @@
     p.elan = 0;
   }
 
+  /**
+   * Lance une capacité élémentaire si elle est rechargée.
+   * SPÉCIAL seul = première capacité, BAS + SPÉCIAL = seconde.
+   */
+  function lancerSpecial(p, bas, axe, S) {
+    const nom = bas ? 'spe2' : 'spe1';
+    const recharge = bas ? 'cd2' : 'cd1';
+    if (p[recharge] > 0 || !S[nom]) return false;
+    if (axe !== 0) p.dir = axe;
+    lancerAttaque(p, nom);
+    p[recharge] = S[nom].recharge;
+    return true;
+  }
+
   function sauter(p, vitesse) {
     p.vy = -vitesse;
     p.sol = false;
@@ -135,6 +150,12 @@
 
     if (p.sol) {
       // ----- Au sol -----
+      if ((appui & T.SPECIAL) && lancerSpecial(p, bas, axe, S)) return;
+      if (appui & T.ATTRAPE) {
+        if (axe !== 0) p.dir = axe;
+        lancerAttaque(p, 'attrape');
+        return;
+      }
       if (appui & T.LEGER) {
         if (haut) lancerAttaque(p, 'leger_haut');
         else if (bas) lancerAttaque(p, 'leger_bas');
@@ -199,6 +220,7 @@
     // ----- En l'air -----
     p.elan = 0;
     p.course = 0;
+    if ((appui & T.SPECIAL) && lancerSpecial(p, bas, axe, S)) return;
     if (appui & (T.LEGER | T.FORT)) {
       if (haut) lancerAttaque(p, 'air_haut');
       else if (bas) lancerAttaque(p, 'air_bas');
@@ -231,6 +253,12 @@
     if (!infos || p.t >= infos.total) {
       changerEtat(p, 'libre');
       return;
+    }
+    // Certaines capacités donnent une impulsion au lanceur (tornade).
+    if (infos.attaque.elan && p.t === infos.debut + 1) {
+      const e = infos.attaque.elan;
+      if (e.vx !== undefined) p.vx = e.vx * p.dir;
+      if (e.vy !== undefined) { p.vy = e.vy; p.sol = false; p.rapide = false; }
     }
     if (p.sol) {
       p.vx *= 0.8;
@@ -368,6 +396,8 @@
     p.t++;
     if (p.invul > 0) p.invul--;
     if (p.traverse > 0) p.traverse--;
+    if (p.cd1 > 0) p.cd1--;
+    if (p.cd2 > 0) p.cd2--;
     if (p.etat !== 'bouclier' && p.bouclier < C.BOUCLIER_MAX) {
       p.bouclier = Math.min(C.BOUCLIER_MAX, p.bouclier + 0.15);
     }

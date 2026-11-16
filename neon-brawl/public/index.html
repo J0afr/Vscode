@@ -77,6 +77,11 @@
     <span>Esquive <kbd>Maj</kbd> / <kbd>N</kbd></span>
   </div>
   <div>
+    <span>Attrape (perce le bouclier) <kbd>U</kbd> / <kbd>X</kbd></span>
+    <span>Capacité 1 <kbd>I</kbd> / <kbd>F</kbd></span>
+    <span>Capacité 2 <kbd>↓</kbd> + <kbd>I</kbd></span>
+  </div>
+  <div>
     <span>Personnage : <kbd>1</kbd> Braise · <kbd>2</kbd> Ondine · <kbd>3</kbd> Brok · <kbd>4</kbd> Zéphyr · <kbd>5</kbd> Zip · <kbd>6</kbd> Givre</span>
   </div>
 </div>
@@ -215,6 +220,7 @@
     Space: T.SAUT,
     KeyJ: T.LEGER, KeyK: T.FORT, KeyL: T.BOUCLIER, ShiftLeft: T.ESQUIVE, ShiftRight: T.ESQUIVE,
     KeyC: T.LEGER, KeyV: T.FORT, KeyB: T.BOUCLIER, KeyN: T.ESQUIVE,
+    KeyU: T.ATTRAPE, KeyI: T.SPECIAL, KeyX: T.ATTRAPE, KeyF: T.SPECIAL,
   };
   let TOUCHES = TOUCHES_RESEAU;
   // Touches 1 à 6 (rangée du haut ou pavé numérique) : choix du personnage.
@@ -272,6 +278,10 @@
   let historique = [];                  // [{ temps, joueurs: Map(id -> joueur) }]
 
   // Effets visuels.
+  // Projectiles et zones des capacités, tels que reçus du serveur.
+  let objets = [];
+  let tempsObjets = 0;
+
   let particules = [];
   let ondes = [];                       // anneaux qui s'élargissent
   let rayons = [];                      // faisceaux d'éjection
@@ -330,6 +340,8 @@
       }
     }
     for (const ev of etat.ev) jouerEvenement(ev, carte);
+    objets = etat.objets || [];
+    tempsObjets = performance.now();
 
     historique.push({ temps: performance.now(), joueurs: carte });
     if (historique.length > 30) historique.shift();
@@ -428,6 +440,10 @@
       ondes.push({ x: ev.x, y: ev.y, r: 8, vr: 3 + ev.f * 0.3, vie: 14, max: 14, couleur: '#ffffff' });
       // Tremblement d'écran uniquement sur les gros coups.
       if (ev.f > 11) secousse = Math.max(secousse, Math.min(22, ev.f * 0.9));
+    } else if (ev.t === 'eclat') {
+      // Un projectile s'écrase, ou un piège se déclenche.
+      etincelles(ev.x, ev.y, ELEMENTS[ev.el] ? ELEMENTS[ev.el].couleur : '#ffffff', 14, 6);
+      sons.atterrissage();
     } else if (ev.t === 'pare') {
       sons.pare();
       etincelles(ev.x, ev.y, couleur, 8, 4);
@@ -689,7 +705,7 @@
       mainAvant = [l * 0.5, -h * 0.6];
       mainArriere = [l * 0.2, -h * 0.5];
     } else if (j.etat === 'attaque' && infos) {
-      const boites = infos.attaque.boites;
+      const boites = infos.attaque.boites.length ? infos.attaque.boites : [infos.attaque.geste || [40, -34, 0]];
       const position = (repos, boite) => {
         const cible = [boite[0] * e, boite[1] * e];
         if (j.t <= infos.debut) {
@@ -949,6 +965,186 @@
   }
 
   // ===========================================================================
+  // CAPACITÉS : projectiles et zones
+  // ===========================================================================
+  function dessinerObjets(maintenant) {
+    // Entre deux états reçus, on prolonge la trajectoire des projectiles.
+    const ticks = Math.min(4, (maintenant - tempsObjets) / (1000 / C.TICK_HZ));
+
+    for (const o of objets) {
+      const couleur = ELEMENTS[o.el] ? ELEMENTS[o.el].couleur : '#ffffff';
+      ctx.save();
+      ctx.strokeStyle = couleur;
+      ctx.fillStyle = couleur;
+      ctx.shadowColor = couleur;
+      ctx.shadowBlur = 16;
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+
+      if (o.t === 'p') {
+        const x = o.x + o.vx * ticks;
+        const y = o.y + o.vy * ticks + 0.5 * o.g * ticks * ticks;
+        const sens = o.vx >= 0 ? 1 : -1;
+        ctx.translate(x, y);
+
+        if (o.s === 'flamme') {
+          ctx.globalAlpha = 0.75;
+          ctx.fillStyle = Math.random() < 0.5 ? '#ffd34a' : couleur;
+          ctx.beginPath();
+          ctx.arc(0, 0, o.r * (0.6 + Math.random() * 0.5), 0, Math.PI * 2);
+          ctx.fill();
+        } else if (o.s === 'bulle') {
+          ctx.fillStyle = couleur + '30';
+          ctx.beginPath();
+          ctx.arc(0, Math.sin(maintenant / 120) * 2, o.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.strokeStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(0, 0, o.r * 0.65, -2.4, -1.5);
+          ctx.stroke();
+        } else if (o.s === 'rocher') {
+          ctx.rotate((maintenant / 130) * sens);
+          ctx.fillStyle = '#16210f';
+          ctx.beginPath();
+          for (let i = 0; i < 7; i++) {
+            const a = (i / 7) * Math.PI * 2;
+            const r = o.r * (i % 2 ? 0.8 : 1.05);
+            ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else if (o.s === 'lame') {
+          // Un croissant de vent.
+          ctx.scale(sens, 1);
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.arc(-o.r * 0.6, 0, o.r * 1.3, -1.1, 1.1);
+          ctx.stroke();
+          ctx.globalAlpha = 0.4;
+          ctx.beginPath();
+          ctx.arc(-o.r * 1.5, 0, o.r * 1.1, -0.9, 0.9);
+          ctx.stroke();
+        } else if (o.s === 'eclair') {
+          // Un trait brisé qui change à chaque image.
+          ctx.scale(sens, 1);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(14, 0);
+          for (let i = 1; i <= 5; i++) ctx.lineTo(14 - i * 16, (Math.random() - 0.5) * 22);
+          ctx.stroke();
+        } else {
+          // Éclat de glace : un losange allongé.
+          ctx.scale(sens, 1);
+          ctx.rotate(Math.atan2(o.vy, Math.abs(o.vx)));
+          ctx.fillStyle = couleur + '55';
+          ctx.beginPath();
+          ctx.moveTo(o.r * 1.5, 0);
+          ctx.lineTo(0, -o.r * 0.55);
+          ctx.lineTo(-o.r * 1.1, 0);
+          ctx.lineTo(0, o.r * 0.55);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+      } else {
+        ctx.translate(o.x, o.y);
+
+        if (o.s === 'brasier') {
+          // Des langues de feu le long de la flaque.
+          ctx.globalAlpha = Math.min(1, o.vie / 30);
+          for (let i = -3; i <= 3; i++) {
+            const hauteur = o.h * (0.45 + 0.5 * Math.abs(Math.sin(maintenant / 110 + i * 1.7)));
+            ctx.fillStyle = i % 2 ? '#ffd34a' : couleur;
+            ctx.beginPath();
+            ctx.moveTo(i * o.l / 3.5 - 10, 0);
+            ctx.quadraticCurveTo(i * o.l / 3.5 + Math.sin(maintenant / 90 + i) * 6, -hauteur * 1.3, i * o.l / 3.5 + 10, 0);
+            ctx.fill();
+          }
+        } else if (o.s === 'geyser') {
+          const k = Math.min(1, o.vie / 10);
+          const colonne = ctx.createLinearGradient(0, 0, 0, -o.h);
+          colonne.addColorStop(0, '#ffffff');
+          colonne.addColorStop(0.3, couleur);
+          colonne.addColorStop(1, couleur + '00');
+          ctx.globalAlpha = k;
+          ctx.fillStyle = colonne;
+          ctx.beginPath();
+          ctx.moveTo(-o.l, 0);
+          ctx.quadraticCurveTo(-o.l * 0.5, -o.h * 0.6, -o.l * 0.8, -o.h);
+          ctx.lineTo(o.l * 0.8, -o.h);
+          ctx.quadraticCurveTo(o.l * 0.5, -o.h * 0.6, o.l, 0);
+          ctx.fill();
+        } else if (o.s === 'seisme') {
+          // Des pics de roche qui jaillissent du sol.
+          ctx.fillStyle = '#16210f';
+          for (let i = -4; i <= 4; i++) {
+            if (i === 0) continue;
+            const hauteur = (o.h + 22) * (0.5 + 0.5 * Math.abs(Math.sin(i * 2.3))) * Math.min(1, o.vie / 6);
+            ctx.beginPath();
+            ctx.moveTo(i * o.l / 4.5 - 14, 0);
+            ctx.lineTo(i * o.l / 4.5 + (i % 2 ? 4 : -4), -hauteur);
+            ctx.lineTo(i * o.l / 4.5 + 14, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          }
+        } else if (o.s === 'tornade') {
+          ctx.globalAlpha = Math.min(1, o.vie / 12);
+          for (let i = 0; i < 6; i++) {
+            const y = -(i + 0.5) * o.h / 6;
+            const largeur = o.l * (0.35 + 0.65 * (i / 5));
+            ctx.beginPath();
+            ctx.ellipse(Math.sin(maintenant / 70 + i) * 8, y, largeur, 7, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        } else if (o.s === 'mine') {
+          // Une boule d'électricité ; elle clignote tant qu'elle n'est pas armée.
+          if (!o.actif && Math.floor(maintenant / 90) % 2) ctx.globalAlpha = 0.3;
+          const r = 11 + Math.sin(maintenant / 100) * 2;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(0, -24, r * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(0, -24, r, 0, Math.PI * 2);
+          ctx.stroke();
+          if (o.actif) {
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < 3; i++) {
+              const a = Math.random() * Math.PI * 2;
+              ctx.moveTo(Math.cos(a) * r, -24 + Math.sin(a) * r);
+              ctx.lineTo(Math.cos(a) * (r + 12), -24 + Math.sin(a) * (r + 12));
+            }
+            ctx.stroke();
+          }
+        } else if (o.s === 'givre') {
+          // Une plaque de glace hérissée de petits cristaux.
+          if (!o.actif) ctx.globalAlpha = 0.4;
+          ctx.fillStyle = couleur + '40';
+          ctx.beginPath();
+          ctx.ellipse(0, 0, o.l, 6, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.lineWidth = 2;
+          for (let i = -2; i <= 2; i++) {
+            ctx.beginPath();
+            ctx.moveTo(i * o.l / 3 - 6, 0);
+            ctx.lineTo(i * o.l / 3, -10 - (i % 2 ? 8 : 0));
+            ctx.lineTo(i * o.l / 3 + 6, 0);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.restore();
+    }
+  }
+
+  // ===========================================================================
   // EFFETS : mise à jour et dessin
   // ===========================================================================
   function dessinerEffets(dt) {
@@ -1058,6 +1254,30 @@
       const P = PERSOS[j.perso];
       const perso = P ? P.nom + ' (' + ELEMENTS[P.element].nom + ')' : '';
       ctx.fillText(j.nom + ' · ' + perso, x, y - 6);
+
+      // Voyants des deux capacités : pleins quand elles sont rechargées.
+      if (P) {
+        const teinte = ELEMENTS[P.element].couleur;
+        [j.cd1, j.cd2].forEach((recharge, k) => {
+          const max = P[k ? 'spe2' : 'spe1'].recharge;
+          const cx = x + largeur / 2 - 26;
+          const cy = y - 48 + k * 20;
+          ctx.shadowColor = teinte;
+          ctx.shadowBlur = recharge > 0 ? 0 : 10;
+          ctx.strokeStyle = teinte;
+          ctx.lineWidth = 2;
+          ctx.globalAlpha = recharge > 0 ? 0.45 : 1;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 6.5, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = teinte;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, 6.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - Math.min(1, recharge / max)));
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        });
+      }
 
       // Vies.
       ctx.shadowColor = j.couleur;
@@ -1174,6 +1394,7 @@
         });
       }
     }
+    dessinerObjets(maintenant);
     // Le joueur local est dessiné en dernier, par-dessus les autres.
     for (const j of vivants) if (j.id !== monId) dessinerPerso(j, false);
     for (const j of vivants) if (j.id === monId) dessinerPerso(j, true);

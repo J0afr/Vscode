@@ -44,6 +44,9 @@ tu es éjecté loin. Tu perds une vie en sortant de l'écran. Chacun a 3 vies.
 | Attaque forte, à maintenir pour la charger | `K` ou `V` |
 | Bouclier | `L` ou `B` |
 | Esquive (roulade si une direction est maintenue) | `Maj` ou `N` |
+| Attrape : courte portée, passe à travers le bouclier | `U` ou `X` |
+| Capacité 1 de l'élément | `I` ou `F` |
+| Capacité 2 de l'élément | bas + `I` |
 | Changer de personnage | `1` à `6` |
 
 Maintenir haut, bas ou un côté en attaquant change le coup. En l'air, les deux
@@ -63,6 +66,26 @@ Chaque personnage appartient à un élément, qui ajoute un effet à tous ses co
 | `5` | **Zip** | Foudre | Le plus rapide, léger | Paralysie : fige la victime plus longtemps à l'impact |
 | `6` | **Givre** | Glace | Solide, glisse un peu, coups lents | Gel : la victime reste sonnée plus longtemps |
 
+### Attrape et capacités élémentaires
+
+L'**attrape** saisit l'adversaire même s'il se protège avec son bouclier, puis le
+projette (maintenir la direction opposée pour le jeter derrière soi). Elle a une
+portée très courte et laisse à découvert si elle rate.
+
+Chaque personnage a deux **capacités** liées à son élément. Chacune a un temps de
+recharge, montré par deux voyants dans le panneau du joueur.
+
+| Personnage | Capacité 1 | Capacité 2 (bas + spécial) |
+| --- | --- | --- |
+| Braise | **Lance-flammes** : jet de flammes continu qui brûle | **Brasier** : flaque de feu au sol, blesse tant qu'on y reste |
+| Ondine | **Bulle** : projectile lent qui repousse loin | **Geyser** : colonne d'eau devant elle, envoie en l'air |
+| Brok | **Rocher** : gros projectile en cloche, très puissant | **Séisme** : frappe tous ceux qui sont au sol autour de lui |
+| Zéphyr | **Lame de vent** : projectile rapide qui traverse les adversaires | **Tornade** : le propulse vers le haut et blesse autour |
+| Zip | **Éclair** : projectile très rapide | **Mine électrique** : piège qui explose au contact |
+| Givre | **Éclat de glace** : projectile qui sonne longtemps | **Piège de givre** : plaque au sol qui gèle sur place |
+
+Une capacité ne touche jamais celui qui l'a lancée.
+
 Pour ajouter un personnage : une entrée dans `PERSOS` (`game/characters.js`) et une
 entrée dans `STYLES` (`public/index.html`) pour son apparence.
 
@@ -74,7 +97,8 @@ entrée dans `STYLES` (`public/index.html`) pour son apparence.
 | `game/constants.js` | Constantes partagées : arène, règles, touches |
 | `game/characters.js` | Éléments, statistiques des 6 personnages et table des attaques |
 | `game/physics.js` | Simulation d'un joueur pour un tick : déplacements, plateformes, actions |
-| `game/combat.js` | Coups, dégâts, éjections, bouclier, pertes de vie (serveur uniquement) |
+| `game/combat.js` | Coups, dégâts, éjections, bouclier, attrape, pertes de vie (serveur uniquement) |
+| `game/capacites.js` | Capacités élémentaires : projectiles, zones et pièges (serveur uniquement) |
 | `game/local.js` | Partie sans serveur (menu, 2 joueurs sur un clavier, ordinateur) pour `neon-brawl.html` |
 | `public/index.html` | Tout le client dans un seul fichier : réseau, affichage, effets, sons |
 
@@ -115,7 +139,8 @@ Elle propose au démarrage :
   il faut donc lancer en plus le serveur de jeu sur la même machine
   (`npm start`, port 3000). La page s'y connecte toute seule.
 
-Touches en local : joueur 1 `ZQSD` + `F` `G` `H` `T`, joueur 2 flèches + `K` `L` `M` `O`.
+Touches en local : joueur 1 `ZQSD` + `F` `G` `H` `T` (attrape `R`, spécial `Y`),
+joueur 2 flèches + `K` `L` `M` `O` (attrape `I`, spécial `P`).
 `Échap` revient au menu.
 
 Comme la version tout-en-un, ce fichier est régénéré par `npm run assembler`.

@@ -41,8 +41,9 @@
     TOUCHE: {
       GAUCHE: 1, DROITE: 2, HAUT: 4, BAS: 8,
       SAUT: 16, LEGER: 32, FORT: 64, BOUCLIER: 128, ESQUIVE: 256,
+      ATTRAPE: 512, SPECIAL: 1024,
     },
-    MASQUE_TOUCHES: 511,
+    MASQUE_TOUCHES: 2047,
   };
 
   if (typeof module !== 'undefined' && module.exports) {

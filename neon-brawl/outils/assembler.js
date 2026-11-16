@@ -15,7 +15,7 @@ const lire = (fichier) => fs.readFileSync(path.join(racine, fichier), 'utf8').tr
 const indenter = (texte) => texte.split('\n').map((l) => (l ? '    ' + l : l)).join('\n');
 
 // Modules du jeu, dans l'ordre où ils dépendent les uns des autres.
-const MODULES = ['constants', 'characters', 'physics', 'combat'];
+const MODULES = ['constants', 'characters', 'physics', 'combat', 'capacites'];
 
 // La page est rangée dans une chaîne `...` : on protège les caractères spéciaux.
 const page = lire('public/index.html')
@@ -115,13 +115,15 @@ charger('serveur');
 // =============================================================================
 const balise = (titre, code) => `<script>\n// ---- ${titre} ----\n${code}\n</script>`;
 const partage = ['constants', 'characters', 'physics'].map((nom) => balise(`game/${nom}.js`, lire(`game/${nom}.js`)));
-// combat.js est écrit pour Node (require / module.exports) : on l'enveloppe.
-partage.push(balise('game/combat.js', `(function () {
+// combat.js et capacites.js sont écrits pour Node (require / module.exports) : on l'enveloppe.
+for (const nom of ['combat', 'capacites']) {
+  partage.push(balise(`game/${nom}.js`, `(function () {
 const module = { exports: {} };
-const require = (nom) => ({ './constants': NB.constants, './characters': NB.persos, './physics': NB.physics })[nom];
-${lire('game/combat.js')}
-NB.combat = module.exports;
+const require = (n) => ({ './constants': NB.constants, './characters': NB.persos, './physics': NB.physics, './combat': NB.combat })[n];
+${lire(`game/${nom}.js`)}
+NB.${nom} = module.exports;
 })();`));
+}
 partage.push(balise('game/local.js', lire('game/local.js')));
 const pageAutonome = lire('public/index.html').replace('<!--NB_PARTAGE-->', () => partage.join('\n'));
 fs.writeFileSync(path.join(racine, 'neon-brawl.html'), pageAutonome + '\n');

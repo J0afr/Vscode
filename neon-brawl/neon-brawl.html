@@ -77,6 +77,11 @@
     <span>Esquive <kbd>Maj</kbd> / <kbd>N</kbd></span>
   </div>
   <div>
+    <span>Attrape (perce le bouclier) <kbd>U</kbd> / <kbd>X</kbd></span>
+    <span>Capacité 1 <kbd>I</kbd> / <kbd>F</kbd></span>
+    <span>Capacité 2 <kbd>↓</kbd> + <kbd>I</kbd></span>
+  </div>
+  <div>
     <span>Personnage : <kbd>1</kbd> Braise · <kbd>2</kbd> Ondine · <kbd>3</kbd> Brok · <kbd>4</kbd> Zéphyr · <kbd>5</kbd> Zip · <kbd>6</kbd> Givre</span>
   </div>
 </div>
@@ -127,8 +132,9 @@
     TOUCHE: {
       GAUCHE: 1, DROITE: 2, HAUT: 4, BAS: 8,
       SAUT: 16, LEGER: 32, FORT: 64, BOUCLIER: 128, ESQUIVE: 256,
+      ATTRAPE: 512, SPECIAL: 1024,
     },
-    MASQUE_TOUCHES: 511,
+    MASQUE_TOUCHES: 2047,
   };
 
   if (typeof module !== 'undefined' && module.exports) {
@@ -183,6 +189,17 @@
       saut: 13.2, doubleSaut: 12.2, sautsAir: 1,
       gravite: 0.62, chuteMax: 11, chuteRapide: 16,
       poids: 0.95, puissance: 1.1, cadence: 0.95,
+      // Capacités : SPÉCIAL seul, et BAS + SPÉCIAL.
+      spe1: {
+        nom: 'Lance-flammes', debut: 8, actif: 24, total: 46, recharge: 100, boites: [], geste: [44, -36, 0],
+        objet: { type: 'projectile', style: 'flamme', rafale: 3, vitesse: 9, r: 13, vie: 15,
+          deg: 1.2, base: 1.2, ech: 0, angle: 20, sansGel: true },
+      },
+      spe2: {
+        nom: 'Brasier', debut: 12, actif: 4, total: 36, recharge: 420, boites: [], geste: [34, -12, 0],
+        objet: { type: 'zone', style: 'brasier', auSol: true, dx: 90, l: 60, h: 50, vie: 260, intervalle: 24,
+          deg: 2.2, base: 2.5, ech: 0, angle: 80, sansGel: true },
+      },
     },
     ondine: {
       nom: 'Ondine', element: 'eau', description: 'Équilibrée, bon retour sur l\'arène',
@@ -192,6 +209,16 @@
       saut: 13.4, doubleSaut: 12.8, sautsAir: 1,
       gravite: 0.56, chuteMax: 10, chuteRapide: 15,
       poids: 1.0, puissance: 1.0, cadence: 1,
+      spe1: {
+        nom: 'Bulle', debut: 12, actif: 4, total: 38, recharge: 110, boites: [], geste: [44, -36, 0],
+        objet: { type: 'projectile', style: 'bulle', vitesse: 4.5, r: 22, vie: 120,
+          deg: 7, base: 5.5, ech: 0.05, angle: 28 },
+      },
+      spe2: {
+        nom: 'Geyser', debut: 14, actif: 4, total: 44, recharge: 300, boites: [], geste: [30, -70, 0],
+        objet: { type: 'zone', style: 'geyser', auSol: true, dx: 110, l: 30, h: 230, vie: 26,
+          deg: 9, base: 7, ech: 0.1, angle: 88 },
+      },
     },
     brok: {
       nom: 'Brok', element: 'terre', description: 'Lourd et puissant',
@@ -201,6 +228,16 @@
       saut: 13.0, doubleSaut: 11.8, sautsAir: 1,
       gravite: 0.7, chuteMax: 12, chuteRapide: 17.5,
       poids: 1.3, puissance: 1.25, cadence: 1.2,
+      spe1: {
+        nom: 'Rocher', debut: 16, actif: 4, total: 48, recharge: 150, boites: [], geste: [40, -60, 0],
+        objet: { type: 'projectile', style: 'rocher', vitesse: 7.5, vy: -5, g: 0.4, r: 24, vie: 160, dy: -40,
+          deg: 12, base: 5, ech: 0.12, angle: 45 },
+      },
+      spe2: {
+        nom: 'Séisme', debut: 18, actif: 4, total: 52, recharge: 300, boites: [], geste: [20, -4, 0],
+        objet: { type: 'zone', style: 'seisme', auSol: true, dx: 0, l: 190, h: 24, vie: 14,
+          deg: 10, base: 6.5, ech: 0.1, angle: 80, deuxCotes: true, auSolSeulement: true },
+      },
     },
     zephyr: {
       nom: 'Zéphyr', element: 'air', description: 'Très léger, plane et saute 3 fois',
@@ -210,6 +247,18 @@
       saut: 13.0, doubleSaut: 12.0, sautsAir: 2,
       gravite: 0.5, chuteMax: 9, chuteRapide: 14.5,
       poids: 0.75, puissance: 0.85, cadence: 0.9,
+      spe1: {
+        nom: 'Lame de vent', debut: 9, actif: 4, total: 32, recharge: 80, boites: [], geste: [44, -36, 0],
+        objet: { type: 'projectile', style: 'lame', vitesse: 13, r: 18, vie: 42,
+          deg: 5, base: 3.5, ech: 0.06, angle: 25, perce: true },
+      },
+      spe2: {
+        // La tornade propulse Zéphyr vers le haut : pratique pour revenir sur l'arène.
+        nom: 'Tornade', debut: 5, actif: 6, total: 30, recharge: 200, boites: [], geste: [0, -80, 0],
+        elan: { vy: -15.5 },
+        objet: { type: 'zone', style: 'tornade', dx: 0, l: 46, h: 150, vie: 50, intervalle: 9,
+          deg: 2, base: 3.5, ech: 0, angle: 85, sansGel: true },
+      },
     },
     zip: {
       nom: 'Zip', element: 'foudre', description: 'Le plus rapide, léger',
@@ -219,6 +268,16 @@
       saut: 13.6, doubleSaut: 12.6, sautsAir: 1,
       gravite: 0.62, chuteMax: 11, chuteRapide: 16.5,
       poids: 0.8, puissance: 0.85, cadence: 0.8,
+      spe1: {
+        nom: 'Éclair', debut: 6, actif: 3, total: 26, recharge: 70, boites: [], geste: [44, -36, 0],
+        objet: { type: 'projectile', style: 'eclair', vitesse: 22, r: 13, vie: 20,
+          deg: 4, base: 2.5, ech: 0.03, angle: 30 },
+      },
+      spe2: {
+        nom: 'Mine électrique', debut: 10, actif: 4, total: 34, recharge: 360, boites: [], geste: [20, -8, 0],
+        objet: { type: 'zone', style: 'mine', dx: 0, l: 34, h: 60, vie: 600, delai: 40,
+          declenche: true, unique: true, deg: 9, base: 5.5, ech: 0.1, angle: 80, deuxCotes: true },
+      },
     },
     givre: {
       nom: 'Givre', element: 'glace', description: 'Solide, glisse un peu, coups lents',
@@ -228,6 +287,17 @@
       saut: 13.0, doubleSaut: 12.0, sautsAir: 1,
       gravite: 0.66, chuteMax: 11.5, chuteRapide: 17,
       poids: 1.15, puissance: 1.1, cadence: 1.1,
+      spe1: {
+        nom: 'Éclat de glace', debut: 11, actif: 4, total: 36, recharge: 100, boites: [], geste: [44, -36, 0],
+        objet: { type: 'projectile', style: 'glacon', vitesse: 8.5, r: 16, vie: 75,
+          deg: 6, base: 3, ech: 0.05, angle: 35 },
+      },
+      spe2: {
+        // Piège posé au sol : l'adversaire qui marche dessus est gelé sur place.
+        nom: 'Piège de givre', debut: 14, actif: 4, total: 40, recharge: 420, boites: [], geste: [34, -12, 0],
+        objet: { type: 'zone', style: 'givre', auSol: true, dx: 80, l: 55, h: 30, vie: 480, delai: 30,
+          declenche: true, unique: true, deg: 5, base: 0, ech: 0, angle: 0, fige: 75 },
+      },
     },
   };
 
@@ -251,6 +321,8 @@
     leger_cote: { debut: 6,  actif: 4,  total: 24, deg: 7,  base: 4,   ech: 0.07, angle: 40,  boites: [[46, -30, 24]] },
     leger_haut: { debut: 5,  actif: 5,  total: 24, deg: 6,  base: 4.5, ech: 0.07, angle: 90,  boites: [[8, -78, 26]] },
     leger_bas:  { debut: 4,  actif: 3,  total: 20, deg: 5,  base: 3.5, ech: 0.05, angle: 75,  boites: [[42, -10, 20]] },
+    // --- Attrape : courte portée, mais passe à travers le bouclier ---
+    attrape:    { debut: 6,  actif: 3,  total: 34, deg: 8,  base: 6,   ech: 0.06, angle: 45,  boites: [[36, -34, 20]], attrape: true },
     // --- Attaques fortes au sol (chargeables) ---
     fort_cote:  { debut: 14, actif: 4,  total: 44, deg: 14, base: 5,   ech: 0.16, angle: 38,  boites: [[54, -32, 30]] },
     fort_haut:  { debut: 11, actif: 5,  total: 42, deg: 13, base: 5,   ech: 0.15, angle: 88,  boites: [[4, -88, 32]] },
@@ -267,9 +339,11 @@
    * personnage. Le coup touche quand  debut < joueur.t <= fin.
    */
   function infosAttaque(joueur) {
-    const attaque = ATTAQUES[joueur.atk];
-    if (!attaque) return null;
     const perso = PERSOS[joueur.perso] || PERSOS.ondine;
+    // « spe1 » et « spe2 » sont les capacités propres au personnage.
+    const special = joueur.atk === 'spe1' || joueur.atk === 'spe2';
+    const attaque = special ? perso[joueur.atk] : ATTAQUES[joueur.atk];
+    if (!attaque) return null;
     const debut = Math.round(attaque.debut * perso.cadence);
     const fin = debut + Math.max(2, Math.round(attaque.actif * perso.cadence));
     const total = Math.max(fin + 2, Math.round(attaque.total * perso.cadence));
@@ -328,6 +402,7 @@
     'nAtk',                 // compteur d'attaques lancées
     'sonne',                // ticks restants sans contrôle après un coup
     'elan',                 // compte à rebours avant le décollage
+    'cd1', 'cd2',           // temps de recharge des deux capacités
   ];
 
   /** État de simulation d'un joueur neuf, placé en (x, y). */
@@ -336,7 +411,7 @@
       x, y, vx: 0, vy: 0, dir: 1, sol: false, sauts: 1,
       etat: 'libre', t: 0, atk: '', charge: 0, bouclier: C.BOUCLIER_MAX,
       gel: 0, invul: 0, traverse: 0, prev: 0, course: 0,
-      rapide: false, esqAir: false, nAtk: 0, sonne: 0, elan: 0,
+      rapide: false, esqAir: false, nAtk: 0, sonne: 0, elan: 0, cd1: 0, cd2: 0,
     };
   }
 
@@ -384,6 +459,20 @@
     p.elan = 0;
   }
 
+  /**
+   * Lance une capacité élémentaire si elle est rechargée.
+   * SPÉCIAL seul = première capacité, BAS + SPÉCIAL = seconde.
+   */
+  function lancerSpecial(p, bas, axe, S) {
+    const nom = bas ? 'spe2' : 'spe1';
+    const recharge = bas ? 'cd2' : 'cd1';
+    if (p[recharge] > 0 || !S[nom]) return false;
+    if (axe !== 0) p.dir = axe;
+    lancerAttaque(p, nom);
+    p[recharge] = S[nom].recharge;
+    return true;
+  }
+
   function sauter(p, vitesse) {
     p.vy = -vitesse;
     p.sol = false;
@@ -424,6 +513,12 @@
 
     if (p.sol) {
       // ----- Au sol -----
+      if ((appui & T.SPECIAL) && lancerSpecial(p, bas, axe, S)) return;
+      if (appui & T.ATTRAPE) {
+        if (axe !== 0) p.dir = axe;
+        lancerAttaque(p, 'attrape');
+        return;
+      }
       if (appui & T.LEGER) {
         if (haut) lancerAttaque(p, 'leger_haut');
         else if (bas) lancerAttaque(p, 'leger_bas');
@@ -488,6 +583,7 @@
     // ----- En l'air -----
     p.elan = 0;
     p.course = 0;
+    if ((appui & T.SPECIAL) && lancerSpecial(p, bas, axe, S)) return;
     if (appui & (T.LEGER | T.FORT)) {
       if (haut) lancerAttaque(p, 'air_haut');
       else if (bas) lancerAttaque(p, 'air_bas');
@@ -520,6 +616,12 @@
     if (!infos || p.t >= infos.total) {
       changerEtat(p, 'libre');
       return;
+    }
+    // Certaines capacités donnent une impulsion au lanceur (tornade).
+    if (infos.attaque.elan && p.t === infos.debut + 1) {
+      const e = infos.attaque.elan;
+      if (e.vx !== undefined) p.vx = e.vx * p.dir;
+      if (e.vy !== undefined) { p.vy = e.vy; p.sol = false; p.rapide = false; }
     }
     if (p.sol) {
       p.vx *= 0.8;
@@ -657,6 +759,8 @@
     p.t++;
     if (p.invul > 0) p.invul--;
     if (p.traverse > 0) p.traverse--;
+    if (p.cd1 > 0) p.cd1--;
+    if (p.cd2 > 0) p.cd2--;
     if (p.etat !== 'bouclier' && p.bouclier < C.BOUCLIER_MAX) {
       p.bouclier = Math.min(C.BOUCLIER_MAX, p.bouclier + 0.15);
     }
@@ -686,12 +790,13 @@
 // ---- game/combat.js ----
 (function () {
 const module = { exports: {} };
-const require = (nom) => ({ './constants': NB.constants, './characters': NB.persos, './physics': NB.physics })[nom];
+const require = (n) => ({ './constants': NB.constants, './characters': NB.persos, './physics': NB.physics, './combat': NB.combat })[n];
 // =============================================================================
 // combat.js — Interactions entre joueurs (serveur uniquement).
 //
 //   - détection des coups (zone de frappe contre corps adverse)
-//   - dégâts, éjection, hitstun, hit freeze, bouclier
+//   - dégâts, éjection, hitstun, hit freeze, bouclier, attrape
+//   - effets des éléments
 //   - sorties d'écran (perte d'une vie) et réapparition
 //
 // Les navigateurs ne calculent jamais rien de tout ça : ils reçoivent le
@@ -752,26 +857,43 @@ function resoudreCoups(joueurs, evenements) {
     }
   }
 
-  for (const coup of coups) appliquerCoup(coup, evenements);
+  for (const { a, v, infos, cx, cy } of coups) {
+    const source = {
+      id: a.id, joueur: a, x: a.x, dir: a.dir, charge: a.charge,
+      element: infos.perso.element, puissance: infos.perso.puissance,
+    };
+    frapper(v, infos.attaque, source, evenements, cx, cy);
+  }
 }
 
-function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
-  const { attaque, perso } = infos;
-  const element = perso.element;
+/**
+ * Applique un coup à la victime v. Sert aux attaques au corps à corps comme
+ * aux projectiles et aux zones (voir capacites.js).
+ * @param {object} v       la victime
+ * @param {object} def     le coup : deg, base, ech, angle, et options
+ *                         (deuxCotes, attrape, fige, sansGel)
+ * @param {object} source  { id, x, dir, element, puissance, charge, joueur }
+ *                         « joueur » n'est renseigné que pour un coup au corps à corps
+ * @param {number} cx, cy  centre de la zone de frappe
+ */
+function frapper(v, def, source, evenements, cx, cy) {
+  const a = source.joueur || null;
+  const element = source.element;
   // Une attaque chargée à fond fait 40 % de dégâts en plus et éjecte plus loin.
-  const charge = Math.min(1, a.charge / C.CHARGE_MAX);
-  const degats = attaque.deg * perso.puissance * (1 + 0.4 * charge);
+  const charge = Math.min(1, (source.charge || 0) / C.CHARGE_MAX);
+  const degats = def.deg * source.puissance * (1 + 0.4 * charge);
   const sv = PERSOS[v.perso] || PERSOS.ondine;
   // Point d'impact, à mi-chemin entre la zone de frappe et la victime.
-  const ix = (cx + v.x) / 2;
-  const iy = (cy + v.y - sv.h / 2) / 2;
+  const ix = Math.round((cx + v.x) / 2);
+  const iy = Math.round((cy + v.y - sv.h / 2) / 2);
 
-  // --- Coup paré par le bouclier ---
-  if (v.etat === 'bouclier') {
+  // --- Coup paré par le bouclier (l'attrape, elle, passe au travers) ---
+  if (v.etat === 'bouclier' && !def.attrape) {
     // Terre : les coups de terre usent le bouclier bien plus vite.
     v.bouclier -= degats * (element === 'terre' ? 2.2 : 1.3);
-    v.vx = (v.x >= a.x ? 1 : -1) * 2.5;
-    a.gel = v.gel = 4;
+    v.vx = (v.x >= source.x ? 1 : -1) * 2.5;
+    v.gel = 4;
+    if (a) a.gel = 4;
     if (v.bouclier <= 0) {
       physics.briserBouclier(v);
       evenements.push({ t: 'brise', x: v.x, y: v.y - sv.h / 2, id: v.id });
@@ -781,16 +903,40 @@ function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
     return;
   }
 
-  // --- Coup reçu ---
   v.degats += degats;
-  // Eau : une poussée de base plus forte.
-  const base = attaque.base + (element === 'eau' ? 1.3 : 0);
-  const ejection = ((base + v.degats * attaque.ech) * (1 + 0.3 * charge)) / sv.poids;
+  v.rapide = false;
+  v.elan = 0;
 
-  const cote = attaque.deuxCotes ? (v.x === a.x ? a.dir : Math.sign(v.x - a.x)) : a.dir;
+  // --- Gel complet (piège de givre) : la victime reste figée sur place ---
+  if (def.fige) {
+    physics.changerEtat(v, 'sonne');
+    v.sonne = def.fige;
+    v.vx = 0;
+    v.vy = 0;
+    evenements.push({ t: 'coup', x: ix, y: iy, f: 8, id: v.id, de: source.id, el: element });
+    return;
+  }
+
+  let cote = def.deuxCotes ? (v.x === source.x ? source.dir : Math.sign(v.x - source.x)) : source.dir;
+
+  // --- Attrape : on saisit l'adversaire, puis on le projette ---
+  if (def.attrape && a) {
+    // En maintenant la direction opposée, on le jette derrière soi.
+    const arriere = a.dir > 0 ? C.TOUCHE.GAUCHE : C.TOUCHE.DROITE;
+    if (a.touches & arriere) cote = -cote;
+    const sa = PERSOS[a.perso] || PERSOS.ondine;
+    v.x = a.x + a.dir * (sa.l / 2 + sv.l / 2);
+    v.y = a.y;
+    v.sol = a.sol;
+  }
+
+  // Eau : une poussée de base plus forte.
+  const base = def.base + (element === 'eau' ? 1.3 : 0);
+  const ejection = ((base + v.degats * def.ech) * (1 + 0.3 * charge)) / sv.poids;
+
   // Air : les coups qui partent vers l'avant envoient plus haut.
-  const releve = element === 'air' && attaque.angle >= 0 && attaque.angle < 75 ? 14 : 0;
-  const angle = ((attaque.angle + releve) * Math.PI) / 180;
+  const releve = element === 'air' && def.angle >= 0 && def.angle < 75 ? 14 : 0;
+  const angle = ((def.angle + releve) * Math.PI) / 180;
   v.vx = Math.cos(angle) * ejection * cote;
   v.vy = -Math.sin(angle) * ejection;
   // Frappé vers le bas alors qu'on est au sol : on rebondit.
@@ -799,15 +945,15 @@ function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
 
   physics.changerEtat(v, 'sonne');
   v.sonne = Math.min(100, Math.round(ejection * 2.4) + 6);
-  v.rapide = false;
-  v.elan = 0;
-  v.dir = -cote || v.dir; // la victime fait face à l'attaquant
+  v.dir = -cote || v.dir; // la victime fait face au coup
 
-  // Hit freeze : les deux joueurs se figent un court instant, d'autant plus
-  // longtemps que le coup est fort.
-  const gel = Math.max(3, Math.min(14, Math.round(3 + degats / 2)));
-  a.gel = gel;
+  // Hit freeze : les joueurs se figent un court instant, d'autant plus
+  // longtemps que le coup est fort. Une attrape tient l'adversaire un moment.
+  let gel = Math.max(3, Math.min(14, Math.round(3 + degats / 2)));
+  if (def.attrape) gel = 16;
+  if (def.sansGel) gel = 0;
   v.gel = gel;
+  if (a) a.gel = gel;
 
   // --- Effets des autres éléments ---
   if (element === 'feu') v.brulure = 120;                       // brûle pendant 2 s
@@ -816,10 +962,19 @@ function appliquerCoup({ a, v, infos, cx, cy }, evenements) {
 
   evenements.push({
     t: 'coup',
-    x: Math.round(ix), y: Math.round(iy),
+    x: ix, y: iy,
     f: Math.round(ejection * 10) / 10,   // force, pour doser les effets
-    id: v.id, de: a.id, el: element,
+    id: v.id, de: source.id, el: element,
   });
+}
+
+/** Effets qui durent dans le temps : la brûlure du feu (+3 % en 2 secondes). */
+function effetsContinus(joueurs) {
+  for (const p of joueurs) {
+    if (!(p.brulure > 0) || p.etat === 'mort') continue;
+    p.brulure--;
+    if (p.brulure % 20 === 0) p.degats += 0.5;
+  }
 }
 
 /**
@@ -853,15 +1008,6 @@ function gererSorties(joueurs, evenements) {
   return prets;
 }
 
-/** Effets qui durent dans le temps : la brûlure du feu (+3 % en 2 secondes). */
-function effetsContinus(joueurs) {
-  for (const p of joueurs) {
-    if (!(p.brulure > 0) || p.etat === 'mort') continue;
-    p.brulure--;
-    if (p.brulure % 20 === 0) p.degats += 0.5;
-  }
-}
-
 /** Remet un joueur en jeu au-dessus de l'arène, brièvement invulnérable. */
 function reapparaitre(p, x, y = 140) {
   const garde = { nAtk: p.nAtk, prev: p.prev };
@@ -873,8 +1019,178 @@ function reapparaitre(p, x, y = 140) {
   p.dir = x < (C.BLOC.x0 + C.BLOC.x1) / 2 ? 1 : -1;
 }
 
-module.exports = { resoudreCoups, effetsContinus, gererSorties, reapparaitre };
+module.exports = { cercleToucheCorps, resoudreCoups, frapper, effetsContinus, gererSorties, reapparaitre };
 NB.combat = module.exports;
+})();
+</script>
+<script>
+// ---- game/capacites.js ----
+(function () {
+const module = { exports: {} };
+const require = (n) => ({ './constants': NB.constants, './characters': NB.persos, './physics': NB.physics, './combat': NB.combat })[n];
+// =============================================================================
+// capacites.js — Capacités élémentaires (serveur uniquement).
+//
+// Chaque personnage a deux capacités (voir « spe1 » et « spe2 » dans
+// characters.js). Quand un joueur en lance une, elle crée un OBJET dans
+// l'arène, qui vit sa vie indépendamment du joueur :
+//
+//   - un PROJECTILE : il avance, et frappe le premier adversaire touché ;
+//   - une ZONE : elle reste en place et frappe ceux qui s'y trouvent
+//     (flaque de feu, geyser, piège qui se déclenche au contact…).
+//
+// Le propriétaire d'un objet n'est jamais touché par celui-ci.
+// =============================================================================
+const C = require('./constants');
+const { PERSOS, infosAttaque } = require('./characters');
+const combat = require('./combat');
+
+let prochainId = 1;
+
+/** Crée l'objet décrit par « o » pour le joueur p, et l'ajoute à la liste. */
+function creer(objets, p, o, perso) {
+  const ech = perso.taille;
+  const x = p.x + p.dir * (o.dx === undefined ? 40 : o.dx) * ech;
+  const commun = {
+    id: prochainId++, style: o.style, def: o,
+    proprio: p.id, element: perso.element, puissance: perso.puissance,
+    dir: p.dir, vie: o.vie, touches: [],
+  };
+
+  if (o.type === 'projectile') {
+    objets.push({
+      ...commun, type: 'p',
+      x, y: p.y + (o.dy === undefined ? -36 : o.dy) * ech,
+      vx: p.dir * o.vitesse, vy: o.vy || 0, r: o.r,
+    });
+    return;
+  }
+
+  // Zone. « unique » : une seule à la fois par joueur (la nouvelle remplace l'ancienne).
+  if (o.unique) {
+    for (const autre of objets) {
+      if (autre.proprio === p.id && autre.style === o.style) autre.vie = 0;
+    }
+  }
+  // « auSol » : la zone se pose sur le sol sous le joueur.
+  let y = p.y;
+  if (o.auSol && !p.sol && x >= C.BLOC.x0 && x <= C.BLOC.x1 && p.y < C.SOL_Y) y = C.SOL_Y;
+  objets.push({
+    ...commun, type: 'z',
+    x, y, l: o.l, h: o.h,
+    delai: o.delai || 0,   // ticks avant que la zone ne devienne active
+    derniers: {},          // dernier tick où chaque joueur a été touché
+  });
+}
+
+/** Les joueurs qui lancent une capacité font apparaître leur objet. */
+function lancer(objets, joueurs) {
+  for (const p of joueurs) {
+    if (p.etat !== 'attaque' || (p.atk !== 'spe1' && p.atk !== 'spe2')) continue;
+    const infos = infosAttaque(p);
+    const o = infos && infos.attaque.objet;
+    if (!o || p.t <= infos.debut) continue;
+
+    if (o.rafale) {
+      // Tir continu (lance-flammes) : un projectile tous les « rafale » ticks.
+      // La mémoire évite de tirer deux fois pendant un hit freeze.
+      const cle = p.nAtk * 1000 + p.t;
+      if (p.t <= infos.fin && (p.t - infos.debut - 1) % o.rafale === 0 && p.memoireTir !== cle) {
+        p.memoireTir = cle;
+        creer(objets, p, o, infos.perso);
+      }
+    } else if (p.memoireSpe !== p.nAtk) {
+      p.memoireSpe = p.nAtk;
+      creer(objets, p, o, infos.perso);
+    }
+  }
+}
+
+function source(objet) {
+  return {
+    id: objet.proprio, joueur: null, x: objet.x, dir: objet.dir, charge: 0,
+    element: objet.element, puissance: objet.puissance,
+  };
+}
+
+function avancerProjectile(o, joueurs, evenements) {
+  o.vy += o.def.g || 0;
+  o.x += o.vx;
+  o.y += o.vy;
+  o.vie--;
+
+  for (const v of joueurs) {
+    if (v.id === o.proprio || v.etat === 'mort' || v.invul > 0 || o.touches.includes(v.id)) continue;
+    if (!combat.cercleToucheCorps(o.x, o.y, o.r, v)) continue;
+    combat.frapper(v, o.def, source(o), evenements, o.x, o.y);
+    o.touches.push(v.id);
+    if (!o.def.perce) { o.vie = 0; return; } // un projectile perçant continue sa route
+  }
+
+  // Le projectile s'écrase contre le bloc principal.
+  if (o.x > C.BLOC.x0 && o.x < C.BLOC.x1 && o.y + o.r * 0.5 > C.SOL_Y) {
+    o.vie = 0;
+    evenements.push({ t: 'eclat', x: Math.round(o.x), y: C.SOL_Y, el: o.element });
+  }
+}
+
+function avancerZone(z, joueurs, evenements, tick) {
+  if (z.delai > 0) { z.delai--; return; }
+  z.vie--;
+  const def = z.def;
+
+  for (const v of joueurs) {
+    if (v.id === z.proprio || v.etat === 'mort' || v.invul > 0) continue;
+    if (def.auSolSeulement && !v.sol) continue;
+    const sv = PERSOS[v.perso] || PERSOS.ondine;
+    const dedans = Math.abs(v.x - z.x) <= z.l + sv.l / 2 && v.y >= z.y - z.h && v.y - sv.h <= z.y + 8;
+    if (!dedans) continue;
+
+    if (def.intervalle) {
+      // Dégâts répétés tant qu'on reste dans la zone.
+      if (tick - (z.derniers[v.id] || -999) < def.intervalle) continue;
+      z.derniers[v.id] = tick;
+    } else if (z.touches.includes(v.id)) {
+      continue; // un seul coup par victime
+    }
+    z.touches.push(v.id);
+    combat.frapper(v, def, source(z), evenements, z.x, v.y - sv.h / 2);
+
+    // Un piège disparaît dès qu'il s'est déclenché.
+    if (def.declenche) {
+      z.vie = 0;
+      evenements.push({ t: 'eclat', x: Math.round(z.x), y: Math.round(z.y - 20), el: z.element });
+      return;
+    }
+  }
+}
+
+/**
+ * Fait vivre toutes les capacités pendant un tick. À appeler après
+ * combat.resoudreCoups. Modifie la liste « objets » sur place.
+ */
+function avancer(objets, joueurs, evenements, tick) {
+  lancer(objets, joueurs);
+  for (const o of objets) {
+    if (o.type === 'p') avancerProjectile(o, joueurs, evenements);
+    else avancerZone(o, joueurs, evenements, tick);
+  }
+  // On retire les objets en fin de vie.
+  for (let i = objets.length - 1; i >= 0; i--) {
+    if (objets[i].vie <= 0) objets.splice(i, 1);
+  }
+}
+
+/** Version allégée des objets, à envoyer aux navigateurs pour l'affichage. */
+function instantane(objets) {
+  const r = (n) => Math.round(n * 10) / 10;
+  return objets.map((o) => (o.type === 'p'
+    ? { id: o.id, t: 'p', s: o.style, el: o.element, x: r(o.x), y: r(o.y), vx: r(o.vx), vy: r(o.vy), g: o.def.g || 0, r: o.r }
+    : { id: o.id, t: 'z', s: o.style, el: o.element, x: r(o.x), y: r(o.y), l: o.l, h: o.h, actif: o.delai > 0 ? 0 : 1, vie: o.vie }));
+}
+
+module.exports = { avancer, instantane };
+NB.capacites = module.exports;
 })();
 </script>
 <script>
@@ -897,6 +1213,7 @@ NB.combat = module.exports;
   const C = NB.constants;
   const physics = NB.physics;
   const combat = NB.combat;
+  const capacites = NB.capacites;
   const { PERSOS, ELEMENTS } = NB.persos;
   const T = C.TOUCHE;
   const CENTRE_X = (C.BLOC.x0 + C.BLOC.x1) / 2;
@@ -908,18 +1225,21 @@ NB.combat = module.exports;
   const TOUCHES_J1 = {
     KeyA: T.GAUCHE, KeyD: T.DROITE, KeyW: T.HAUT, KeyS: T.BAS,
     KeyF: T.LEGER, KeyG: T.FORT, KeyH: T.BOUCLIER, KeyT: T.ESQUIVE,
+    KeyR: T.ATTRAPE, KeyY: T.SPECIAL,
   };
   const TOUCHES_J2 = {
     ArrowLeft: T.GAUCHE, ArrowRight: T.DROITE, ArrowUp: T.HAUT, ArrowDown: T.BAS,
     KeyK: T.LEGER, KeyL: T.FORT, Semicolon: T.BOUCLIER, KeyO: T.ESQUIVE,
+    KeyI: T.ATTRAPE, KeyP: T.SPECIAL,
     Numpad1: T.LEGER, Numpad2: T.FORT, Numpad3: T.BOUCLIER, Numpad0: T.ESQUIVE,
+    Numpad4: T.ATTRAPE, Numpad5: T.SPECIAL,
   };
   const AIDE_J1 = 'Bouger <kbd>Q</kbd><kbd>D</kbd> · Sauter <kbd>Z</kbd> · Descendre <kbd>S</kbd> · '
-    + 'Légère <kbd>F</kbd> · Forte <kbd>G</kbd> · Bouclier <kbd>H</kbd> · Esquive <kbd>T</kbd>';
+    + 'Légère <kbd>F</kbd> · Forte <kbd>G</kbd> · Bouclier <kbd>H</kbd> · Esquive <kbd>T</kbd> · Attrape <kbd>R</kbd> · Spécial <kbd>Y</kbd>';
   const AIDE_J2 = 'Bouger <kbd>←</kbd><kbd>→</kbd> · Sauter <kbd>↑</kbd> · Descendre <kbd>↓</kbd> · '
-    + 'Légère <kbd>K</kbd> · Forte <kbd>L</kbd> · Bouclier <kbd>M</kbd> · Esquive <kbd>O</kbd>';
+    + 'Légère <kbd>K</kbd> · Forte <kbd>L</kbd> · Bouclier <kbd>M</kbd> · Esquive <kbd>O</kbd> · Attrape <kbd>I</kbd> · Spécial <kbd>P</kbd>';
   const AIDE_RESEAU = 'Bouger <kbd>←</kbd><kbd>→</kbd> ou <kbd>Q</kbd><kbd>D</kbd> · Sauter <kbd>↑</kbd> <kbd>Z</kbd> <kbd>Espace</kbd> · '
-    + 'Légère <kbd>J</kbd> · Forte <kbd>K</kbd> · Bouclier <kbd>L</kbd> · Esquive <kbd>Maj</kbd> · Personnage <kbd>1</kbd> à <kbd>6</kbd>';
+    + 'Légère <kbd>J</kbd> · Forte <kbd>K</kbd> · Bouclier <kbd>L</kbd> · Esquive <kbd>Maj</kbd> · Attrape <kbd>U</kbd> · Spécial <kbd>I</kbd> · Personnage <kbd>1</kbd> à <kbd>6</kbd>';
 
   const enfonceesJ2 = new Set();
   let appuisBrefsJ2 = 0;
@@ -950,6 +1270,7 @@ NB.combat = module.exports;
   let terminee = false;  // quelqu'un a perdu ses 3 vies
   let tick = 0;
   let evenements = [];
+  let objets = [];       // projectiles et zones des capacités
 
   function creerJoueur(id, nom, couleur, perso) {
     const joueur = {
@@ -1024,8 +1345,14 @@ NB.combat = module.exports;
       ia.prochain = tick + 10 + Math.floor(Math.random() * 14);
       ia.plan = 0;
       const hasard = Math.random();
-      if (Math.abs(dx) > portee) {
+      if (c.etat === 'bouclier' && Math.abs(dx) <= portee && Math.abs(dy) < 40) {
+        ia.appui = T.ATTRAPE | versCible; // un bouclier se contre avec une attrape
+      } else if (Math.abs(dx) > portee) {
         ia.plan = versCible;
+        // De loin, il utilise ses capacités de temps en temps.
+        if (Math.abs(dy) < 60 && Math.abs(dx) < 520 && hasard > 0.72) {
+          ia.appui = T.SPECIAL | versCible | (hasard > 0.9 ? T.BAS : 0);
+        }
         if (dy < -70 && hasard < 0.5) ia.saut = 2;
       } else if (Math.abs(dy) < 70) {
         if (c.etat === 'attaque' && hasard < 0.35) ia.bouclier = 20;
@@ -1074,6 +1401,7 @@ NB.combat = module.exports;
     physics.avancerJoueur(j2, j2.touches);
 
     combat.resoudreCoups(joueurs, evenements);
+    capacites.avancer(objets, joueurs, evenements, tick);
     combat.effetsContinus(joueurs);
     for (const joueur of combat.gererSorties(joueurs, evenements)) {
       // À l'entraînement, les vies sont illimitées.
@@ -1088,7 +1416,7 @@ NB.combat = module.exports;
 
   function diffuser() {
     const etat = {
-      t: 'etat', tick, ev: evenements,
+      t: 'etat', tick, ev: evenements, objets: capacites.instantane(objets),
       joueurs: joueurs.map((j) => {
         const s = {
           id: j.id, nom: j.nom, couleur: j.couleur, perso: j.perso,
@@ -1128,6 +1456,7 @@ NB.combat = module.exports;
       creerJoueur(1, 'Joueur 1', '#00e5ff', config.perso1),
       creerJoueur(2, nomAdversaire, couleurAdversaire, config.perso2),
     ];
+    objets = [];
     terminee = false;
     panneau.style.display = 'none';
     document.getElementById('touches').innerHTML =
@@ -1211,7 +1540,8 @@ NB.combat = module.exports;
       + '<h2>Touches</h2>'
       + '<p><b>Joueur 1</b> — ' + AIDE_J1 + '<br><b>Joueur 2</b> — ' + AIDE_J2 + '</p>'
       + '<p class="note">Maintenir la direction pour courir. Maintenir Forte pour charger. '
-      + 'Haut, bas ou côté + attaque change le coup.</p>'
+      + 'Haut, bas ou côté + attaque change le coup.<br>'
+      + 'L\'attrape passe à travers le bouclier. Spécial = capacité 1, Bas + Spécial = capacité 2.</p>'
       + '<p><button class="gros" data-action="jouer">Jouer</button> '
       + '<button class="gros" data-action="reseau" style="border-color:#ff2bd6;color:#ff2bd6">En réseau</button></p>'
       + '<p class="note">« En réseau » : pour jouer entre plusieurs PC. Il faut que le serveur de jeu '
@@ -1371,6 +1701,7 @@ NB.combat = module.exports;
     Space: T.SAUT,
     KeyJ: T.LEGER, KeyK: T.FORT, KeyL: T.BOUCLIER, ShiftLeft: T.ESQUIVE, ShiftRight: T.ESQUIVE,
     KeyC: T.LEGER, KeyV: T.FORT, KeyB: T.BOUCLIER, KeyN: T.ESQUIVE,
+    KeyU: T.ATTRAPE, KeyI: T.SPECIAL, KeyX: T.ATTRAPE, KeyF: T.SPECIAL,
   };
   let TOUCHES = TOUCHES_RESEAU;
   // Touches 1 à 6 (rangée du haut ou pavé numérique) : choix du personnage.
@@ -1428,6 +1759,10 @@ NB.combat = module.exports;
   let historique = [];                  // [{ temps, joueurs: Map(id -> joueur) }]
 
   // Effets visuels.
+  // Projectiles et zones des capacités, tels que reçus du serveur.
+  let objets = [];
+  let tempsObjets = 0;
+
   let particules = [];
   let ondes = [];                       // anneaux qui s'élargissent
   let rayons = [];                      // faisceaux d'éjection
@@ -1486,6 +1821,8 @@ NB.combat = module.exports;
       }
     }
     for (const ev of etat.ev) jouerEvenement(ev, carte);
+    objets = etat.objets || [];
+    tempsObjets = performance.now();
 
     historique.push({ temps: performance.now(), joueurs: carte });
     if (historique.length > 30) historique.shift();
@@ -1584,6 +1921,10 @@ NB.combat = module.exports;
       ondes.push({ x: ev.x, y: ev.y, r: 8, vr: 3 + ev.f * 0.3, vie: 14, max: 14, couleur: '#ffffff' });
       // Tremblement d'écran uniquement sur les gros coups.
       if (ev.f > 11) secousse = Math.max(secousse, Math.min(22, ev.f * 0.9));
+    } else if (ev.t === 'eclat') {
+      // Un projectile s'écrase, ou un piège se déclenche.
+      etincelles(ev.x, ev.y, ELEMENTS[ev.el] ? ELEMENTS[ev.el].couleur : '#ffffff', 14, 6);
+      sons.atterrissage();
     } else if (ev.t === 'pare') {
       sons.pare();
       etincelles(ev.x, ev.y, couleur, 8, 4);
@@ -1845,7 +2186,7 @@ NB.combat = module.exports;
       mainAvant = [l * 0.5, -h * 0.6];
       mainArriere = [l * 0.2, -h * 0.5];
     } else if (j.etat === 'attaque' && infos) {
-      const boites = infos.attaque.boites;
+      const boites = infos.attaque.boites.length ? infos.attaque.boites : [infos.attaque.geste || [40, -34, 0]];
       const position = (repos, boite) => {
         const cible = [boite[0] * e, boite[1] * e];
         if (j.t <= infos.debut) {
@@ -2105,6 +2446,186 @@ NB.combat = module.exports;
   }
 
   // ===========================================================================
+  // CAPACITÉS : projectiles et zones
+  // ===========================================================================
+  function dessinerObjets(maintenant) {
+    // Entre deux états reçus, on prolonge la trajectoire des projectiles.
+    const ticks = Math.min(4, (maintenant - tempsObjets) / (1000 / C.TICK_HZ));
+
+    for (const o of objets) {
+      const couleur = ELEMENTS[o.el] ? ELEMENTS[o.el].couleur : '#ffffff';
+      ctx.save();
+      ctx.strokeStyle = couleur;
+      ctx.fillStyle = couleur;
+      ctx.shadowColor = couleur;
+      ctx.shadowBlur = 16;
+      ctx.lineWidth = 3;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+
+      if (o.t === 'p') {
+        const x = o.x + o.vx * ticks;
+        const y = o.y + o.vy * ticks + 0.5 * o.g * ticks * ticks;
+        const sens = o.vx >= 0 ? 1 : -1;
+        ctx.translate(x, y);
+
+        if (o.s === 'flamme') {
+          ctx.globalAlpha = 0.75;
+          ctx.fillStyle = Math.random() < 0.5 ? '#ffd34a' : couleur;
+          ctx.beginPath();
+          ctx.arc(0, 0, o.r * (0.6 + Math.random() * 0.5), 0, Math.PI * 2);
+          ctx.fill();
+        } else if (o.s === 'bulle') {
+          ctx.fillStyle = couleur + '30';
+          ctx.beginPath();
+          ctx.arc(0, Math.sin(maintenant / 120) * 2, o.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.strokeStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(0, 0, o.r * 0.65, -2.4, -1.5);
+          ctx.stroke();
+        } else if (o.s === 'rocher') {
+          ctx.rotate((maintenant / 130) * sens);
+          ctx.fillStyle = '#16210f';
+          ctx.beginPath();
+          for (let i = 0; i < 7; i++) {
+            const a = (i / 7) * Math.PI * 2;
+            const r = o.r * (i % 2 ? 0.8 : 1.05);
+            ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+          }
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        } else if (o.s === 'lame') {
+          // Un croissant de vent.
+          ctx.scale(sens, 1);
+          ctx.lineWidth = 5;
+          ctx.beginPath();
+          ctx.arc(-o.r * 0.6, 0, o.r * 1.3, -1.1, 1.1);
+          ctx.stroke();
+          ctx.globalAlpha = 0.4;
+          ctx.beginPath();
+          ctx.arc(-o.r * 1.5, 0, o.r * 1.1, -0.9, 0.9);
+          ctx.stroke();
+        } else if (o.s === 'eclair') {
+          // Un trait brisé qui change à chaque image.
+          ctx.scale(sens, 1);
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.moveTo(14, 0);
+          for (let i = 1; i <= 5; i++) ctx.lineTo(14 - i * 16, (Math.random() - 0.5) * 22);
+          ctx.stroke();
+        } else {
+          // Éclat de glace : un losange allongé.
+          ctx.scale(sens, 1);
+          ctx.rotate(Math.atan2(o.vy, Math.abs(o.vx)));
+          ctx.fillStyle = couleur + '55';
+          ctx.beginPath();
+          ctx.moveTo(o.r * 1.5, 0);
+          ctx.lineTo(0, -o.r * 0.55);
+          ctx.lineTo(-o.r * 1.1, 0);
+          ctx.lineTo(0, o.r * 0.55);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+        }
+      } else {
+        ctx.translate(o.x, o.y);
+
+        if (o.s === 'brasier') {
+          // Des langues de feu le long de la flaque.
+          ctx.globalAlpha = Math.min(1, o.vie / 30);
+          for (let i = -3; i <= 3; i++) {
+            const hauteur = o.h * (0.45 + 0.5 * Math.abs(Math.sin(maintenant / 110 + i * 1.7)));
+            ctx.fillStyle = i % 2 ? '#ffd34a' : couleur;
+            ctx.beginPath();
+            ctx.moveTo(i * o.l / 3.5 - 10, 0);
+            ctx.quadraticCurveTo(i * o.l / 3.5 + Math.sin(maintenant / 90 + i) * 6, -hauteur * 1.3, i * o.l / 3.5 + 10, 0);
+            ctx.fill();
+          }
+        } else if (o.s === 'geyser') {
+          const k = Math.min(1, o.vie / 10);
+          const colonne = ctx.createLinearGradient(0, 0, 0, -o.h);
+          colonne.addColorStop(0, '#ffffff');
+          colonne.addColorStop(0.3, couleur);
+          colonne.addColorStop(1, couleur + '00');
+          ctx.globalAlpha = k;
+          ctx.fillStyle = colonne;
+          ctx.beginPath();
+          ctx.moveTo(-o.l, 0);
+          ctx.quadraticCurveTo(-o.l * 0.5, -o.h * 0.6, -o.l * 0.8, -o.h);
+          ctx.lineTo(o.l * 0.8, -o.h);
+          ctx.quadraticCurveTo(o.l * 0.5, -o.h * 0.6, o.l, 0);
+          ctx.fill();
+        } else if (o.s === 'seisme') {
+          // Des pics de roche qui jaillissent du sol.
+          ctx.fillStyle = '#16210f';
+          for (let i = -4; i <= 4; i++) {
+            if (i === 0) continue;
+            const hauteur = (o.h + 22) * (0.5 + 0.5 * Math.abs(Math.sin(i * 2.3))) * Math.min(1, o.vie / 6);
+            ctx.beginPath();
+            ctx.moveTo(i * o.l / 4.5 - 14, 0);
+            ctx.lineTo(i * o.l / 4.5 + (i % 2 ? 4 : -4), -hauteur);
+            ctx.lineTo(i * o.l / 4.5 + 14, 0);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+          }
+        } else if (o.s === 'tornade') {
+          ctx.globalAlpha = Math.min(1, o.vie / 12);
+          for (let i = 0; i < 6; i++) {
+            const y = -(i + 0.5) * o.h / 6;
+            const largeur = o.l * (0.35 + 0.65 * (i / 5));
+            ctx.beginPath();
+            ctx.ellipse(Math.sin(maintenant / 70 + i) * 8, y, largeur, 7, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+        } else if (o.s === 'mine') {
+          // Une boule d'électricité ; elle clignote tant qu'elle n'est pas armée.
+          if (!o.actif && Math.floor(maintenant / 90) % 2) ctx.globalAlpha = 0.3;
+          const r = 11 + Math.sin(maintenant / 100) * 2;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(0, -24, r * 0.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.arc(0, -24, r, 0, Math.PI * 2);
+          ctx.stroke();
+          if (o.actif) {
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            for (let i = 0; i < 3; i++) {
+              const a = Math.random() * Math.PI * 2;
+              ctx.moveTo(Math.cos(a) * r, -24 + Math.sin(a) * r);
+              ctx.lineTo(Math.cos(a) * (r + 12), -24 + Math.sin(a) * (r + 12));
+            }
+            ctx.stroke();
+          }
+        } else if (o.s === 'givre') {
+          // Une plaque de glace hérissée de petits cristaux.
+          if (!o.actif) ctx.globalAlpha = 0.4;
+          ctx.fillStyle = couleur + '40';
+          ctx.beginPath();
+          ctx.ellipse(0, 0, o.l, 6, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.stroke();
+          ctx.lineWidth = 2;
+          for (let i = -2; i <= 2; i++) {
+            ctx.beginPath();
+            ctx.moveTo(i * o.l / 3 - 6, 0);
+            ctx.lineTo(i * o.l / 3, -10 - (i % 2 ? 8 : 0));
+            ctx.lineTo(i * o.l / 3 + 6, 0);
+            ctx.stroke();
+          }
+        }
+      }
+      ctx.restore();
+    }
+  }
+
+  // ===========================================================================
   // EFFETS : mise à jour et dessin
   // ===========================================================================
   function dessinerEffets(dt) {
@@ -2214,6 +2735,30 @@ NB.combat = module.exports;
       const P = PERSOS[j.perso];
       const perso = P ? P.nom + ' (' + ELEMENTS[P.element].nom + ')' : '';
       ctx.fillText(j.nom + ' · ' + perso, x, y - 6);
+
+      // Voyants des deux capacités : pleins quand elles sont rechargées.
+      if (P) {
+        const teinte = ELEMENTS[P.element].couleur;
+        [j.cd1, j.cd2].forEach((recharge, k) => {
+          const max = P[k ? 'spe2' : 'spe1'].recharge;
+          const cx = x + largeur / 2 - 26;
+          const cy = y - 48 + k * 20;
+          ctx.shadowColor = teinte;
+          ctx.shadowBlur = recharge > 0 ? 0 : 10;
+          ctx.strokeStyle = teinte;
+          ctx.lineWidth = 2;
+          ctx.globalAlpha = recharge > 0 ? 0.45 : 1;
+          ctx.beginPath();
+          ctx.arc(cx, cy, 6.5, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = teinte;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.arc(cx, cy, 6.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - Math.min(1, recharge / max)));
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        });
+      }
 
       // Vies.
       ctx.shadowColor = j.couleur;
@@ -2330,6 +2875,7 @@ NB.combat = module.exports;
         });
       }
     }
+    dessinerObjets(maintenant);
     // Le joueur local est dessiné en dernier, par-dessus les autres.
     for (const j of vivants) if (j.id !== monId) dessinerPerso(j, false);
     for (const j of vivants) if (j.id === monId) dessinerPerso(j, true);

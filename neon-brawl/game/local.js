@@ -16,6 +16,7 @@
   const C = NB.constants;
   const physics = NB.physics;
   const combat = NB.combat;
+  const capacites = NB.capacites;
   const { PERSOS, ELEMENTS } = NB.persos;
   const T = C.TOUCHE;
   const CENTRE_X = (C.BLOC.x0 + C.BLOC.x1) / 2;
@@ -27,18 +28,21 @@
   const TOUCHES_J1 = {
     KeyA: T.GAUCHE, KeyD: T.DROITE, KeyW: T.HAUT, KeyS: T.BAS,
     KeyF: T.LEGER, KeyG: T.FORT, KeyH: T.BOUCLIER, KeyT: T.ESQUIVE,
+    KeyR: T.ATTRAPE, KeyY: T.SPECIAL,
   };
   const TOUCHES_J2 = {
     ArrowLeft: T.GAUCHE, ArrowRight: T.DROITE, ArrowUp: T.HAUT, ArrowDown: T.BAS,
     KeyK: T.LEGER, KeyL: T.FORT, Semicolon: T.BOUCLIER, KeyO: T.ESQUIVE,
+    KeyI: T.ATTRAPE, KeyP: T.SPECIAL,
     Numpad1: T.LEGER, Numpad2: T.FORT, Numpad3: T.BOUCLIER, Numpad0: T.ESQUIVE,
+    Numpad4: T.ATTRAPE, Numpad5: T.SPECIAL,
   };
   const AIDE_J1 = 'Bouger <kbd>Q</kbd><kbd>D</kbd> · Sauter <kbd>Z</kbd> · Descendre <kbd>S</kbd> · '
-    + 'Légère <kbd>F</kbd> · Forte <kbd>G</kbd> · Bouclier <kbd>H</kbd> · Esquive <kbd>T</kbd>';
+    + 'Légère <kbd>F</kbd> · Forte <kbd>G</kbd> · Bouclier <kbd>H</kbd> · Esquive <kbd>T</kbd> · Attrape <kbd>R</kbd> · Spécial <kbd>Y</kbd>';
   const AIDE_J2 = 'Bouger <kbd>←</kbd><kbd>→</kbd> · Sauter <kbd>↑</kbd> · Descendre <kbd>↓</kbd> · '
-    + 'Légère <kbd>K</kbd> · Forte <kbd>L</kbd> · Bouclier <kbd>M</kbd> · Esquive <kbd>O</kbd>';
+    + 'Légère <kbd>K</kbd> · Forte <kbd>L</kbd> · Bouclier <kbd>M</kbd> · Esquive <kbd>O</kbd> · Attrape <kbd>I</kbd> · Spécial <kbd>P</kbd>';
   const AIDE_RESEAU = 'Bouger <kbd>←</kbd><kbd>→</kbd> ou <kbd>Q</kbd><kbd>D</kbd> · Sauter <kbd>↑</kbd> <kbd>Z</kbd> <kbd>Espace</kbd> · '
-    + 'Légère <kbd>J</kbd> · Forte <kbd>K</kbd> · Bouclier <kbd>L</kbd> · Esquive <kbd>Maj</kbd> · Personnage <kbd>1</kbd> à <kbd>6</kbd>';
+    + 'Légère <kbd>J</kbd> · Forte <kbd>K</kbd> · Bouclier <kbd>L</kbd> · Esquive <kbd>Maj</kbd> · Attrape <kbd>U</kbd> · Spécial <kbd>I</kbd> · Personnage <kbd>1</kbd> à <kbd>6</kbd>';
 
   const enfonceesJ2 = new Set();
   let appuisBrefsJ2 = 0;
@@ -69,6 +73,7 @@
   let terminee = false;  // quelqu'un a perdu ses 3 vies
   let tick = 0;
   let evenements = [];
+  let objets = [];       // projectiles et zones des capacités
 
   function creerJoueur(id, nom, couleur, perso) {
     const joueur = {
@@ -143,8 +148,14 @@
       ia.prochain = tick + 10 + Math.floor(Math.random() * 14);
       ia.plan = 0;
       const hasard = Math.random();
-      if (Math.abs(dx) > portee) {
+      if (c.etat === 'bouclier' && Math.abs(dx) <= portee && Math.abs(dy) < 40) {
+        ia.appui = T.ATTRAPE | versCible; // un bouclier se contre avec une attrape
+      } else if (Math.abs(dx) > portee) {
         ia.plan = versCible;
+        // De loin, il utilise ses capacités de temps en temps.
+        if (Math.abs(dy) < 60 && Math.abs(dx) < 520 && hasard > 0.72) {
+          ia.appui = T.SPECIAL | versCible | (hasard > 0.9 ? T.BAS : 0);
+        }
         if (dy < -70 && hasard < 0.5) ia.saut = 2;
       } else if (Math.abs(dy) < 70) {
         if (c.etat === 'attaque' && hasard < 0.35) ia.bouclier = 20;
@@ -193,6 +204,7 @@
     physics.avancerJoueur(j2, j2.touches);
 
     combat.resoudreCoups(joueurs, evenements);
+    capacites.avancer(objets, joueurs, evenements, tick);
     combat.effetsContinus(joueurs);
     for (const joueur of combat.gererSorties(joueurs, evenements)) {
       // À l'entraînement, les vies sont illimitées.
@@ -207,7 +219,7 @@
 
   function diffuser() {
     const etat = {
-      t: 'etat', tick, ev: evenements,
+      t: 'etat', tick, ev: evenements, objets: capacites.instantane(objets),
       joueurs: joueurs.map((j) => {
         const s = {
           id: j.id, nom: j.nom, couleur: j.couleur, perso: j.perso,
@@ -247,6 +259,7 @@
       creerJoueur(1, 'Joueur 1', '#00e5ff', config.perso1),
       creerJoueur(2, nomAdversaire, couleurAdversaire, config.perso2),
     ];
+    objets = [];
     terminee = false;
     panneau.style.display = 'none';
     document.getElementById('touches').innerHTML =
@@ -330,7 +343,8 @@
       + '<h2>Touches</h2>'
       + '<p><b>Joueur 1</b> — ' + AIDE_J1 + '<br><b>Joueur 2</b> — ' + AIDE_J2 + '</p>'
       + '<p class="note">Maintenir la direction pour courir. Maintenir Forte pour charger. '
-      + 'Haut, bas ou côté + attaque change le coup.</p>'
+      + 'Haut, bas ou côté + attaque change le coup.<br>'
+      + 'L\'attrape passe à travers le bouclier. Spécial = capacité 1, Bas + Spécial = capacité 2.</p>'
       + '<p><button class="gros" data-action="jouer">Jouer</button> '
       + '<button class="gros" data-action="reseau" style="border-color:#ff2bd6;color:#ff2bd6">En réseau</button></p>'
       + '<p class="note">« En réseau » : pour jouer entre plusieurs PC. Il faut que le serveur de jeu '

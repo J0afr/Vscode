@@ -24,6 +24,7 @@ const C = require('./game/constants');
 const { PERSOS } = require('./game/characters');
 const physics = require('./game/physics');
 const combat = require('./game/combat');
+const capacites = require('./game/capacites');
 
 const PORT = Number(process.env.PORT) || 3000;
 const HOTE = '0.0.0.0'; // écoute sur toutes les cartes réseau (accès depuis le LAN)
@@ -166,6 +167,7 @@ wss.on('connection', (socket) => {
 // -----------------------------------------------------------------------------
 let tick = 0;
 let evenements = []; // coups, éjections… accumulés jusqu'au prochain envoi
+const objets = [];   // projectiles et zones des capacités élémentaires
 
 function consommerInput(joueur) {
   const input = joueur.file.shift();
@@ -192,6 +194,7 @@ function avancerSimulation() {
 
   // 2. Les coups, puis les sorties d'écran.
   combat.resoudreCoups(liste, evenements);
+  capacites.avancer(objets, liste, evenements, tick);
   combat.effetsContinus(liste);
   const prets = combat.gererSorties(liste, evenements);
 
@@ -212,6 +215,7 @@ function diffuserEtat() {
     t: 'etat',
     tick,
     ev: evenements,
+    objets: capacites.instantane(objets),
     joueurs: [...joueurs.values()].map((j) => {
       const s = {
         id: j.id, nom: j.nom, couleur: j.couleur, perso: j.perso,
