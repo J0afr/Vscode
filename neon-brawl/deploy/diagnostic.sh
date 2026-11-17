@@ -37,26 +37,42 @@ done
 
 echo
 echo "=== 2. Programmes qui attendent les joueurs ==="
-ECOUTE=$(ss -ltnp 2>/dev/null)
-if echo "$ECOUTE" | grep -qE '(0\.0\.0\.0|\*|\[::\]):80\b'; then
-  ok "Apache répond sur le port 80 (la page du jeu)."
-else
-  pb "Rien n'écoute sur le port 80 : Apache n'est pas lancé.
-            -> sudo systemctl start apache2   (et : sudo systemctl enable apache2)"
-fi
-if echo "$ECOUTE" | grep -qE '(0\.0\.0\.0|\*|\[::\]):3000\b'; then
-  ok "Le serveur de jeu répond sur le port 3000, pour tout le réseau."
-elif echo "$ECOUTE" | grep -qE '127\.0\.0\.1:3000\b'; then
-  pb "Le serveur de jeu n'écoute que sur la VM elle-même (127.0.0.1)."
-else
-  pb "Le serveur de jeu n'est pas lancé : sans lui, chaque PC joue seul.
+IP1=$(echo $IPS | awk '{print $1}')
+# Renvoie « reseau » si le port répond depuis l'adresse réseau de la VM,
+# « local » s'il ne répond que sur la VM elle-même, « non » sinon.
+ecoute() {
+  local port=$1
+  if command -v ss >/dev/null; then
+    local liste
+    liste=$(ss -ltn 2>/dev/null)
+    if echo "$liste" | grep -qE "(0\.0\.0\.0|\*|\[::\]|${IP1//./\\.}):$port\b"; then echo reseau; return; fi
+    if echo "$liste" | grep -qE "127\.0\.0\.1:$port\b"; then echo local; return; fi
+    echo non; return
+  fi
+  # Sans « ss » : on essaie de se connecter.
+  if [ -n "$IP1" ] && timeout 2 bash -c "echo > /dev/tcp/$IP1/$port" 2>/dev/null; then echo reseau; return; fi
+  if timeout 2 bash -c "echo > /dev/tcp/127.0.0.1/$port" 2>/dev/null; then echo local; return; fi
+  echo non
+}
+
+case $(ecoute 80) in
+  reseau) ok "Apache répond sur le port 80 (la page du jeu)." ;;
+  local)  pb "Apache ne répond que sur la VM elle-même, pas sur le réseau." ;;
+  *)      pb "Rien ne répond sur le port 80 : Apache n'est pas lancé.
+            -> sudo systemctl start apache2   (et : sudo systemctl enable apache2)" ;;
+esac
+case $(ecoute 3000) in
+  reseau) ok "Le serveur de jeu répond sur le port 3000, pour tout le réseau." ;;
+  local)  pb "Le serveur de jeu ne répond que sur la VM elle-même (127.0.0.1)." ;;
+  *)
+    pb "Le serveur de jeu n'est pas lancé : sans lui, chaque PC joue seul.
             -> sudo systemctl start neon-brawl
                (s'il n'existe pas : sudo bash deploy/installer.sh)"
-  if command -v systemctl >/dev/null && systemctl list-unit-files 2>/dev/null | grep -q neon-brawl; then
-    echo "            Dernières lignes du service :"
-    journalctl -u neon-brawl -n 8 --no-pager 2>/dev/null | sed 's/^/              /'
-  fi
-fi
+    if command -v systemctl >/dev/null && systemctl list-unit-files 2>/dev/null | grep -q neon-brawl; then
+      echo "            Dernières lignes du service :"
+      journalctl -u neon-brawl -n 8 --no-pager 2>/dev/null | sed 's/^/              /'
+    fi ;;
+esac
 
 echo
 echo "=== 3. Pare-feu ==="
