@@ -202,3 +202,14 @@ journalctl -u neon-brawl -f      # voir ses messages
 
 La carte réseau de la VM doit être en mode « accès par pont » (bridge) pour que
 les autres PC du réseau puissent l'atteindre.
+
+## Les autres PC n'arrivent pas à jouer ?
+
+Sur la VM, lance :
+
+```bash
+sudo bash deploy/diagnostic.sh
+```
+
+Le script vérifie le mode réseau de la VM, Apache, le serveur de jeu et le pare-feu,
+et indique la commande à taper pour chaque problème trouvé.
