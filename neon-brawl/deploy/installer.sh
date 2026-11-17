@@ -20,8 +20,17 @@ fi
 
 ICI="$(cd "$(dirname "$0")/.." && pwd)"
 
-if ! command -v node >/dev/null; then
-  echo "Node.js n'est pas installé. Installe-le d'abord :  sudo apt install -y nodejs npm"
+if ! command -v node >/dev/null || ! command -v npm >/dev/null; then
+  echo "Node.js ou npm n'est pas installé. Installe-les d'abord :"
+  echo "   sudo apt update && sudo apt install -y nodejs npm"
+  exit 1
+fi
+VERSION_NODE=$(node -p "process.versions.node.split('.')[0]")
+if [ "$VERSION_NODE" -lt 12 ]; then
+  echo "Node.js $(node -v) est trop ancien (il faut la version 12 ou plus)."
+  echo "Installe une version récente, par exemple :"
+  echo "   curl -fsSL https://deb.nodesource.com/setup_20.x | sudo bash -"
+  echo "   sudo apt install -y nodejs"
   exit 1
 fi
 

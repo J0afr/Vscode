@@ -1468,6 +1468,7 @@ const PAGE_WEB = `<!DOCTYPE html>
     position: fixed;
     top: 8px;
     right: 14px;
+    max-width: calc(100% - 470px);
     text-align: right;
     font-size: 12px;
     line-height: 1.9;
@@ -1489,10 +1490,75 @@ const PAGE_WEB = `<!DOCTYPE html>
     font-size: 11px;
     text-align: center;
   }
+  #alerte {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 20;
+    max-width: 640px;
+    padding: 18px 24px;
+    border: 4px solid #1d1a26;
+    border-radius: 14px;
+    background: #fff4d6;
+    color: #1d1a26;
+    font-size: 14px;
+    line-height: 1.5;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+    display: none;
+  }
+  #alerte h2 { margin: 0 0 8px; font-size: 19px; color: #c0392b; }
+  #alerte code { background: #1d1a26; color: #ffd23f; padding: 1px 6px; border-radius: 4px; }
+  #alerte li { margin: 4px 0; }
 </style>
+<script>
+// =============================================================================
+// Compatibilité et messages d'erreur — ce bloc s'exécute avant tout le reste.
+// =============================================================================
+(function () {
+  // Les navigateurs anciens (Chrome < 99, Firefox < 112, Safari < 16) ne
+  // connaissent pas roundRect, utilisé pour les rectangles arrondis. On le
+  // fournit nous-mêmes, sinon l'affichage se figerait.
+  var proto = window.CanvasRenderingContext2D && CanvasRenderingContext2D.prototype;
+  if (proto && !proto.roundRect) {
+    proto.roundRect = function (x, y, l, h, r) {
+      var v = Array.isArray(r) ? (r.length === 4 ? r : [r[0], r[0], r[0], r[0]]) : [r || 0, r || 0, r || 0, r || 0];
+      var m = Math.min(Math.abs(l), Math.abs(h)) / 2;
+      var hg = Math.min(v[0], m), hd = Math.min(v[1], m), bd = Math.min(v[2], m), bg = Math.min(v[3], m);
+      this.moveTo(x + hg, y);
+      this.lineTo(x + l - hd, y);
+      this.quadraticCurveTo(x + l, y, x + l, y + hd);
+      this.lineTo(x + l, y + h - bd);
+      this.quadraticCurveTo(x + l, y + h, x + l - bd, y + h);
+      this.lineTo(x + bg, y + h);
+      this.quadraticCurveTo(x, y + h, x, y + h - bg);
+      this.lineTo(x, y + hg);
+      this.quadraticCurveTo(x, y, x + hg, y);
+      this.closePath();
+    };
+  }
+
+  // Affiche un message au milieu de l'écran (titre + contenu HTML).
+  window.alerteNB = function (titre, html) {
+    var boite = document.getElementById('alerte');
+    if (!boite) return;
+    boite.innerHTML = '<h2>' + titre + '</h2>' + html;
+    boite.style.display = titre ? 'block' : 'none';
+  };
+
+  // Toute erreur du jeu est affichée à l'écran, pour pouvoir la signaler.
+  window.addEventListener('error', function (e) {
+    window.alerteNB('Le jeu a rencontré une erreur',
+      '<p><code>' + String(e.message).replace(/</g, '&lt;') + '</code></p>'
+      + '<p>Ligne ' + e.lineno + '. Navigateur : ' + navigator.userAgent.replace(/</g, '&lt;') + '</p>'
+      + '<p>Mets ton navigateur à jour, ou envoie ce message pour qu\\'on corrige le problème.</p>');
+  });
+})();
+</script>
 </head>
 <body>
 <div id="scene"><canvas id="jeu" width="1280" height="720"></canvas></div>
+<div id="alerte"></div>
 <div id="bandeau"><b>NEON BRAWL</b> · <span id="statut">connexion…</span></div>
 <div id="touches">
   <div>
@@ -1803,6 +1869,29 @@ const PAGE_WEB = `<!DOCTYPE html>
     return liste;
   }
   let essai = 0;
+  let echecs = 0; // tentatives ratées d'affilée
+
+  /** Explique à l'écran pourquoi le multijoueur ne se connecte pas. */
+  function expliquerEchec() {
+    const hote = location.hostname || '(fichier ouvert sans serveur web)';
+    const adresses = adressesServeur().map((a) => '<code>' + a + '</code>').join(' puis ');
+    let conseils = '';
+    if (location.protocol === 'file:') {
+      conseils = '<li>Ce fichier a été ouvert directement depuis le disque. Pour jouer à plusieurs, ouvre '
+        + 'plutôt <code>http://&lt;IP-de-la-VM&gt;/</code> dans le navigateur.</li>';
+    } else if (hote === 'localhost' || hote === '127.0.0.1') {
+      conseils = '<li>Tu as ouvert <code>' + hote + '</code> : ça ne marche que sur la VM elle-même. '
+        + 'Les autres PC doivent utiliser l\\'adresse IP de la VM.</li>';
+    }
+    window.alerteNB('Serveur de jeu introuvable',
+      '<p>La page s\\'affiche, mais le serveur de jeu (celui qui relie les joueurs) ne répond pas.<br>'
+      + 'Adresses essayées : ' + adresses + '.</p><ul>' + conseils
+      + '<li>Sur la VM, vérifie qu\\'il tourne : <code>sudo systemctl status neon-brawl</code><br>'
+      + 'sinon : <code>sudo systemctl restart neon-brawl</code></li>'
+      + '<li>Pour trouver ce qui bloque : <code>sudo bash deploy/diagnostic.sh</code></li>'
+      + '<li>En attendant, tu peux jouer sur ce PC : touche <code>Échap</code>, puis « Jouer ».</li></ul>'
+      + '<p>Nouvelle tentative automatique toutes les secondes…</p>');
+  }
 
   function connecter() {
     elStatut.textContent = 'connexion…';
@@ -1812,7 +1901,11 @@ const PAGE_WEB = `<!DOCTYPE html>
     } else {
       const adresses = adressesServeur();
       socket = new WebSocket(adresses[essai % adresses.length]);
-      socket.addEventListener('open', () => { ouvert = true; });
+      socket.addEventListener('open', () => {
+        ouvert = true;
+        echecs = 0;
+        window.alerteNB('');
+      });
     }
 
     socket.addEventListener('message', (e) => {
@@ -1829,7 +1922,11 @@ const PAGE_WEB = `<!DOCTYPE html>
 
     socket.addEventListener('close', () => {
       // Jamais ouverte : on essaiera l'autre adresse. Sinon, on retente la même.
-      if (!ouvert) essai++;
+      if (!ouvert) {
+        essai++;
+        echecs++;
+        if (echecs >= 4 && !enLocal) expliquerEchec();
+      }
       elStatut.textContent = ouvert
         ? 'déconnecté — nouvelle tentative…'
         : 'serveur de jeu introuvable — nouvelle tentative…';
@@ -4100,6 +4197,20 @@ MODULES['serveur'] = function (module, exports, require, __dirname) {
       }
       return adresses;
     }
+
+    // Les erreurs d'écoute sont signalées à la fois par le serveur HTTP et par le
+    // serveur WebSocket : on les traite au même endroit.
+    wss.on('error', () => {});
+    serveurHttp.on('error', (erreur) => {
+      if (erreur.code === 'EADDRINUSE') {
+        console.error(`Le port ${PORT} est déjà utilisé : le serveur de jeu tourne sans doute déjà`);
+        console.error('(par exemple le service : sudo systemctl status neon-brawl).');
+        console.error('Pour le relancer : sudo systemctl restart neon-brawl');
+      } else {
+        console.error('Impossible de démarrer le serveur :', erreur.message);
+      }
+      process.exit(1);
+    });
 
     serveurHttp.listen(PORT, HOTE, () => {
       console.log('==============================================');

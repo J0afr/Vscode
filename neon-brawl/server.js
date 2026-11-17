@@ -280,6 +280,20 @@ function adressesLocales() {
   return adresses;
 }
 
+// Les erreurs d'écoute sont signalées à la fois par le serveur HTTP et par le
+// serveur WebSocket : on les traite au même endroit.
+wss.on('error', () => {});
+serveurHttp.on('error', (erreur) => {
+  if (erreur.code === 'EADDRINUSE') {
+    console.error(`Le port ${PORT} est déjà utilisé : le serveur de jeu tourne sans doute déjà`);
+    console.error('(par exemple le service : sudo systemctl status neon-brawl).');
+    console.error('Pour le relancer : sudo systemctl restart neon-brawl');
+  } else {
+    console.error('Impossible de démarrer le serveur :', erreur.message);
+  }
+  process.exit(1);
+});
+
 serveurHttp.listen(PORT, HOTE, () => {
   console.log('==============================================');
   console.log('  NEON BRAWL — serveur démarré');
