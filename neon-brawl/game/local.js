@@ -66,7 +66,12 @@
   // ---------------------------------------------------------------------------
   // État de la partie
   // ---------------------------------------------------------------------------
-  const config = { perso1: 'braise', adversaire: 'joueur', perso2: 'brok', carte: 'prairie' };
+  // Sur téléphone, on ne peut pas jouer à deux sur le même écran : l'adversaire
+  // par défaut est alors l'ordinateur.
+  const TACTILE = /[?&]tactile=1/.test(location.search)
+    || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+    || 'ontouchstart' in window;
+  const config = { perso1: 'braise', adversaire: TACTILE ? 'ordi' : 'joueur', perso2: 'brok', carte: 'prairie' };
   let joueurs = [];
   let enCours = false;   // une partie locale tourne
   let terminee = false;  // quelqu'un a perdu ses 3 vies
@@ -302,7 +307,7 @@
     panneau.style.display = 'none';
     document.getElementById('touches').innerHTML =
       '<div>' + AIDE_RESEAU + '</div><div><kbd>Échap</kbd> retour au menu</div>';
-    NB.client.demarrer({ local: false });
+    NB.client.demarrer({ local: false, perso: config.perso1 });
   }
 
   function finir(gagnant) {
@@ -323,7 +328,8 @@
   // ---------------------------------------------------------------------------
   const style = document.createElement('style');
   style.textContent = [
-    '#panneau { position: fixed; inset: 0; z-index: 10; display: flex; padding: 10px; box-sizing: border-box;',
+    '#panneau { position: fixed; inset: 0; z-index: 10; display: flex; padding: 10px; box-sizing: border-box; touch-action: pan-y; }',
+    '#panneau {',
     '  background: rgba(10, 10, 18, 0.82); overflow: auto; }',
     '#panneau .boite { margin: auto; max-width: 900px; padding: 16px 28px; text-align: center; border: 4px solid #1d1a26;',
     '  border-radius: 16px; background: linear-gradient(#2d2a44, #1f1c30); box-shadow: 0 10px 40px rgba(0,0,0,0.6); }',
@@ -338,6 +344,15 @@
     '#panneau button.choisi { outline: 3px solid #ffd23f; outline-offset: 1px; transform: translateY(-2px); }',
     '#panneau button.gros { padding: 10px 28px; font-size: 18px; background: #ffd23f; color: #1d1a26; text-shadow: none; }',
     '#panneau .note { opacity: 0.75; font-size: 12px; line-height: 1.5; }',
+    '@media (max-width: 760px), (max-height: 500px) {',
+    '  #panneau .boite { padding: 10px 12px; }',
+    '  #panneau h1 { font-size: 26px; }',
+    '  #panneau h2 { margin: 6px 0 4px; font-size: 13px; }',
+    '  #panneau button { padding: 5px 8px; font-size: 12px; }',
+    '  #panneau button small { display: none; }',
+    '  #panneau .note, #panneau .aide { display: none; }',
+    '  #panneau button.gros { padding: 8px 20px; font-size: 16px; }',
+    '}',
   ].join('\n');
   document.head.appendChild(style);
 
@@ -355,11 +370,18 @@
     }).join('');
   }
 
+  function boutonsJouer() {
+    return '<p><button class="gros" data-action="jouer">Jouer</button> '
+      + '<button class="gros" data-action="reseau" style="background:#4ac6ff">En réseau</button></p>';
+  }
+
   function afficherMenu() {
     const types = { joueur: 'Joueur 2 (même clavier)', ordi: 'Ordinateur', mannequin: 'Mannequin d\'entraînement' };
+    if (TACTILE) delete types.joueur; // pas de second clavier sur un téléphone
     panneau.innerHTML =
       '<div class="boite">'
       + '<h1>NEON BRAWL</h1>'
+      + (TACTILE ? boutonsJouer() : '')
       + '<p class="note">Fais monter le pourcentage de ton adversaire pour l\'éjecter de l\'écran. 3 vies chacun.</p>'
       + '<h2>Joueur 1</h2>' + boutonsPersos('perso1')
       + '<h2>Adversaire</h2>'
@@ -370,15 +392,19 @@
       + Object.keys(C.CARTES).concat('hasard').map((id) => '<button data-cle="carte" data-valeur="' + id + '"'
         + (config.carte === id ? ' class="choisi"' : '') + '>'
         + (id === 'hasard' ? 'Au hasard' : C.CARTES[id].nom) + '</button>').join('')
-      + '<h2>Touches</h2>'
-      + '<p><b>Joueur 1</b> — ' + AIDE_J1 + '<br><b>Joueur 2</b> — ' + AIDE_J2 + '</p>'
+      + (TACTILE
+        ? '<div class="aide"><h2>Commandes tactiles</h2>'
+          + '<p class="note">Joystick à gauche : bouger (haut = sauter, bas = descendre ou chute rapide). '
+          + 'Boutons à droite : A légère, B forte (maintenir pour charger), ★ spécial, saut, bouclier, '
+          + 'esquive, attrape. Tiens le téléphone en mode paysage.</p></div>'
+        : '<h2>Touches</h2>'
+          + '<p><b>Joueur 1</b> — ' + AIDE_J1 + '<br><b>Joueur 2</b> — ' + AIDE_J2 + '</p>')
       + '<p class="note">Maintenir la direction pour courir. Maintenir Forte pour charger. '
       + 'Haut, bas ou côté + attaque change le coup.<br>'
       + 'L\'attrape passe à travers le bouclier. Spécial = capacité 1, Bas + Spécial = capacité 2, '
       + 'Spécial en l\'air (ou Haut + Spécial) = capacité aérienne.<br>'
       + 'Près du vide, on s\'accroche au bord : Haut pour remonter, Bas pour lâcher.</p>'
-      + '<p><button class="gros" data-action="jouer">Jouer</button> '
-      + '<button class="gros" data-action="reseau" style="background:#4ac6ff">En réseau</button></p>'
+      + (TACTILE ? '' : boutonsJouer())
       + '<p class="note">« En réseau » : pour jouer entre plusieurs PC. Il faut que le serveur de jeu '
       + 'soit lancé sur cette machine (port 3000).</p>'
       + '</div>';

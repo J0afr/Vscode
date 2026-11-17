@@ -183,6 +183,22 @@ joueur 2 flèches + `K` `L` `M` `O` (attrape `I`, spécial `P`).
 
 Comme la version tout-en-un, ce fichier est régénéré par `npm run assembler`.
 
+## Sur téléphone et tablette
+
+La même page s'adapte toute seule aux écrans tactiles : il suffit d'ouvrir
+`http://<IP-de-la-VM>/` sur le téléphone (connecté au même Wi-Fi), en mode paysage.
+
+- **Joystick à gauche** : bouger ; haut pour sauter, bas pour descendre d'une
+  plateforme ou tomber plus vite.
+- **Boutons à droite** : A (attaque légère), B (attaque forte, à maintenir pour
+  charger), ★ (capacité spéciale : avec le joystick vers le bas = capacité 2, en
+  l'air = capacité aérienne), Saut, bouclier, esquive, attrape.
+- **En haut** : plein écran, menu, et en réseau « Perso › » et « Carte › ».
+
+Sur téléphone, le menu propose de jouer contre l'ordinateur, contre le mannequin,
+ou en réseau contre les autres (PC ou téléphones). En mode portrait, un message
+demande de tourner le téléphone.
+
 ## Le WebSocket
 
 Les navigateurs et le serveur de jeu communiquent par **WebSocket** : une connexion

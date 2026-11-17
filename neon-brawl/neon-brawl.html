@@ -2,7 +2,9 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <title>Neon Brawl</title>
 <style>
   /* Aucune ressource externe : tout est dans ce fichier (pas de CDN). */
@@ -62,6 +64,54 @@
     font-size: 11px;
     text-align: center;
   }
+  /* ----- Commandes tactiles (téléphones et tablettes) ----- */
+  body.tactile { touch-action: none; overscroll-behavior: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+  body.tactile #touches { display: none; }
+  #tactile { display: none; }
+  body.tactile.en-jeu #tactile { display: block; }
+  #tactile .zone { position: fixed; z-index: 6; touch-action: none; }
+  #manette {
+    left: calc(18px + env(safe-area-inset-left)); bottom: 18px;
+    width: 34vmin; height: 34vmin; max-width: 190px; max-height: 190px; min-width: 120px; min-height: 120px;
+    border-radius: 50%; background: rgba(20, 18, 30, 0.35); border: 3px solid rgba(255, 255, 255, 0.45);
+  }
+  #manche {
+    position: absolute; left: 50%; top: 50%; width: 42%; height: 42%; margin: -21% 0 0 -21%;
+    border-radius: 50%; background: rgba(255, 255, 255, 0.75); border: 3px solid #1d1a26; pointer-events: none;
+  }
+  #boutons {
+    right: calc(14px + env(safe-area-inset-right)); bottom: 14px;
+    width: 42vmin; height: 42vmin; max-width: 240px; max-height: 240px; min-width: 150px; min-height: 150px;
+  }
+  #tactile button {
+    position: absolute; border-radius: 50%; border: 3px solid #1d1a26; color: #1d1a26;
+    font: bold 13px "Trebuchet MS", sans-serif; touch-action: none; padding: 0; opacity: 0.85;
+    box-shadow: 0 3px 0 rgba(0, 0, 0, 0.35);
+  }
+  #tactile button small { display: block; font-size: 9px; font-weight: normal; }
+  #tactile button.appuye { transform: scale(0.9); opacity: 1; filter: brightness(1.2); box-shadow: none; }
+  /* Boutons principaux, en losange */
+  #boutons .b-saut   { right: 34%; top: 0;    width: 32%; height: 32%; background: #ffffff; }
+  #boutons .b-leger  { right: 0;   top: 34%;  width: 34%; height: 34%; background: #ffd23f; }
+  #boutons .b-fort   { right: 34%; bottom: 0; width: 32%; height: 32%; background: #ff7a4a; }
+  #boutons .b-special{ left: 0;    top: 34%;  width: 34%; height: 34%; background: #4ac6ff; }
+  /* Petits boutons */
+  #boutons .b-bouclier { left: 4%;  top: 2%;    width: 23%; height: 23%; background: #b48cff; }
+  #boutons .b-esquive  { right: 2%; bottom: 4%; width: 23%; height: 23%; background: #9be04a; }
+  #boutons .b-attrape  { left: 4%;  bottom: 4%; width: 23%; height: 23%; background: #ff8ad2; }
+  #barre-tactile { top: calc(6px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right)); display: flex; gap: 6px; }
+  #barre-tactile button {
+    position: static; border-radius: 9px; width: auto; height: 30px; padding: 0 10px;
+    background: rgba(242, 242, 247, 0.9); font-size: 12px;
+  }
+  body.tactile #bandeau { font-size: 11px; top: 8px; left: 10px; }
+  #tourner {
+    display: none; position: fixed; inset: 0; z-index: 30; background: #1f1c30; color: #fff;
+    align-items: center; justify-content: center; text-align: center; font-size: 20px; padding: 30px;
+  }
+  #tourner span { display: block; font-size: 64px; margin-bottom: 12px; }
+  @media (orientation: portrait) { body.tactile.en-jeu #tourner { display: flex; } }
+
   #alerte {
     position: fixed;
     left: 50%;
@@ -131,6 +181,25 @@
 <body>
 <div id="scene"><canvas id="jeu" width="1280" height="720"></canvas></div>
 <div id="alerte"></div>
+<div id="tactile">
+  <div id="manette" class="zone"><div id="manche"></div></div>
+  <div id="boutons" class="zone">
+    <button class="b-saut" data-touche="SAUT">Saut</button>
+    <button class="b-leger" data-touche="LEGER">A<small>légère</small></button>
+    <button class="b-fort" data-touche="FORT">B<small>forte</small></button>
+    <button class="b-special" data-touche="SPECIAL">★<small>spécial</small></button>
+    <button class="b-bouclier" data-touche="BOUCLIER"><small>bouclier</small></button>
+    <button class="b-esquive" data-touche="ESQUIVE"><small>esquive</small></button>
+    <button class="b-attrape" data-touche="ATTRAPE"><small>attrape</small></button>
+  </div>
+  <div id="barre-tactile" class="zone">
+    <button data-action="perso" class="reseau-seul">Perso ›</button>
+    <button data-action="carte" class="reseau-seul">Carte ›</button>
+    <button data-action="plein">⛶</button>
+    <button data-action="menu">☰ Menu</button>
+  </div>
+</div>
+<div id="tourner"><div><span>↻</span>Tourne ton téléphone en mode paysage pour jouer.</div></div>
 <div id="bandeau"><b>NEON BRAWL</b> · <span id="statut">connexion…</span></div>
 <div id="touches">
   <div>
@@ -1620,7 +1689,12 @@ NB.capacites = module.exports;
   // ---------------------------------------------------------------------------
   // État de la partie
   // ---------------------------------------------------------------------------
-  const config = { perso1: 'braise', adversaire: 'joueur', perso2: 'brok', carte: 'prairie' };
+  // Sur téléphone, on ne peut pas jouer à deux sur le même écran : l'adversaire
+  // par défaut est alors l'ordinateur.
+  const TACTILE = /[?&]tactile=1/.test(location.search)
+    || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+    || 'ontouchstart' in window;
+  const config = { perso1: 'braise', adversaire: TACTILE ? 'ordi' : 'joueur', perso2: 'brok', carte: 'prairie' };
   let joueurs = [];
   let enCours = false;   // une partie locale tourne
   let terminee = false;  // quelqu'un a perdu ses 3 vies
@@ -1856,7 +1930,7 @@ NB.capacites = module.exports;
     panneau.style.display = 'none';
     document.getElementById('touches').innerHTML =
       '<div>' + AIDE_RESEAU + '</div><div><kbd>Échap</kbd> retour au menu</div>';
-    NB.client.demarrer({ local: false });
+    NB.client.demarrer({ local: false, perso: config.perso1 });
   }
 
   function finir(gagnant) {
@@ -1877,7 +1951,8 @@ NB.capacites = module.exports;
   // ---------------------------------------------------------------------------
   const style = document.createElement('style');
   style.textContent = [
-    '#panneau { position: fixed; inset: 0; z-index: 10; display: flex; padding: 10px; box-sizing: border-box;',
+    '#panneau { position: fixed; inset: 0; z-index: 10; display: flex; padding: 10px; box-sizing: border-box; touch-action: pan-y; }',
+    '#panneau {',
     '  background: rgba(10, 10, 18, 0.82); overflow: auto; }',
     '#panneau .boite { margin: auto; max-width: 900px; padding: 16px 28px; text-align: center; border: 4px solid #1d1a26;',
     '  border-radius: 16px; background: linear-gradient(#2d2a44, #1f1c30); box-shadow: 0 10px 40px rgba(0,0,0,0.6); }',
@@ -1892,6 +1967,15 @@ NB.capacites = module.exports;
     '#panneau button.choisi { outline: 3px solid #ffd23f; outline-offset: 1px; transform: translateY(-2px); }',
     '#panneau button.gros { padding: 10px 28px; font-size: 18px; background: #ffd23f; color: #1d1a26; text-shadow: none; }',
     '#panneau .note { opacity: 0.75; font-size: 12px; line-height: 1.5; }',
+    '@media (max-width: 760px), (max-height: 500px) {',
+    '  #panneau .boite { padding: 10px 12px; }',
+    '  #panneau h1 { font-size: 26px; }',
+    '  #panneau h2 { margin: 6px 0 4px; font-size: 13px; }',
+    '  #panneau button { padding: 5px 8px; font-size: 12px; }',
+    '  #panneau button small { display: none; }',
+    '  #panneau .note, #panneau .aide { display: none; }',
+    '  #panneau button.gros { padding: 8px 20px; font-size: 16px; }',
+    '}',
   ].join('\n');
   document.head.appendChild(style);
 
@@ -1909,11 +1993,18 @@ NB.capacites = module.exports;
     }).join('');
   }
 
+  function boutonsJouer() {
+    return '<p><button class="gros" data-action="jouer">Jouer</button> '
+      + '<button class="gros" data-action="reseau" style="background:#4ac6ff">En réseau</button></p>';
+  }
+
   function afficherMenu() {
     const types = { joueur: 'Joueur 2 (même clavier)', ordi: 'Ordinateur', mannequin: 'Mannequin d\'entraînement' };
+    if (TACTILE) delete types.joueur; // pas de second clavier sur un téléphone
     panneau.innerHTML =
       '<div class="boite">'
       + '<h1>NEON BRAWL</h1>'
+      + (TACTILE ? boutonsJouer() : '')
       + '<p class="note">Fais monter le pourcentage de ton adversaire pour l\'éjecter de l\'écran. 3 vies chacun.</p>'
       + '<h2>Joueur 1</h2>' + boutonsPersos('perso1')
       + '<h2>Adversaire</h2>'
@@ -1924,15 +2015,19 @@ NB.capacites = module.exports;
       + Object.keys(C.CARTES).concat('hasard').map((id) => '<button data-cle="carte" data-valeur="' + id + '"'
         + (config.carte === id ? ' class="choisi"' : '') + '>'
         + (id === 'hasard' ? 'Au hasard' : C.CARTES[id].nom) + '</button>').join('')
-      + '<h2>Touches</h2>'
-      + '<p><b>Joueur 1</b> — ' + AIDE_J1 + '<br><b>Joueur 2</b> — ' + AIDE_J2 + '</p>'
+      + (TACTILE
+        ? '<div class="aide"><h2>Commandes tactiles</h2>'
+          + '<p class="note">Joystick à gauche : bouger (haut = sauter, bas = descendre ou chute rapide). '
+          + 'Boutons à droite : A légère, B forte (maintenir pour charger), ★ spécial, saut, bouclier, '
+          + 'esquive, attrape. Tiens le téléphone en mode paysage.</p></div>'
+        : '<h2>Touches</h2>'
+          + '<p><b>Joueur 1</b> — ' + AIDE_J1 + '<br><b>Joueur 2</b> — ' + AIDE_J2 + '</p>')
       + '<p class="note">Maintenir la direction pour courir. Maintenir Forte pour charger. '
       + 'Haut, bas ou côté + attaque change le coup.<br>'
       + 'L\'attrape passe à travers le bouclier. Spécial = capacité 1, Bas + Spécial = capacité 2, '
       + 'Spécial en l\'air (ou Haut + Spécial) = capacité aérienne.<br>'
       + 'Près du vide, on s\'accroche au bord : Haut pour remonter, Bas pour lâcher.</p>'
-      + '<p><button class="gros" data-action="jouer">Jouer</button> '
-      + '<button class="gros" data-action="reseau" style="background:#4ac6ff">En réseau</button></p>'
+      + (TACTILE ? '' : boutonsJouer())
       + '<p class="note">« En réseau » : pour jouer entre plusieurs PC. Il faut que le serveur de jeu '
       + 'soit lancé sur cette machine (port 3000).</p>'
       + '</div>';
@@ -2182,16 +2277,141 @@ NB.capacites = module.exports;
   window.addEventListener('pointerdown', activerAudio);
 
   function lireTouches() {
-    let masque = appuisBrefs;
+    let masque = appuisBrefs | appuisTactiles | masqueTactile;
     appuisBrefs = 0;
+    appuisTactiles = 0;
     for (const code of enfoncees) masque |= TOUCHES[code];
     return masque;
+  }
+
+  // ===========================================================================
+  // COMMANDES TACTILES — téléphones et tablettes
+  // Le joystick et les boutons produisent les mêmes bits que le clavier :
+  // tout le reste du jeu (prédiction, serveur…) ne voit aucune différence.
+  // ===========================================================================
+  const TACTILE = /[?&]tactile=1/.test(location.search)
+    || (window.matchMedia && window.matchMedia('(pointer: coarse)').matches)
+    || 'ontouchstart' in window;
+  let masqueTactile = 0;   // touches maintenues à l'écran
+  let appuisTactiles = 0;  // touches enfoncées depuis le dernier tick
+  let masqueManette = 0;
+  let masqueBoutons = 0;
+
+  function majTactile(nouveau, ancien) {
+    appuisTactiles |= nouveau & ~ancien;
+    masqueTactile = masqueManette | masqueBoutons;
+  }
+
+  if (TACTILE) {
+    document.body.classList.add('tactile');
+    // Pas de menu contextuel sur un appui long.
+    document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // --- Joystick : gauche/droite pour bouger, haut pour sauter, bas pour descendre ---
+    const manette = document.getElementById('manette');
+    const manche = document.getElementById('manche');
+    let doigtManette = null;
+    let centre = null;
+    const bougerManette = (e) => {
+      let dx = (e.clientX - centre.x) / centre.r;
+      let dy = (e.clientY - centre.y) / centre.r;
+      const n = Math.hypot(dx, dy);
+      if (n > 1) { dx /= n; dy /= n; }
+      manche.style.transform = 'translate(' + (dx * centre.r * 0.55) + 'px,' + (dy * centre.r * 0.55) + 'px)';
+      let m = 0;
+      if (dx < -0.35) m |= T.GAUCHE;
+      if (dx > 0.35) m |= T.DROITE;
+      if (dy < -0.55) m |= T.HAUT;
+      if (dy > 0.55) m |= T.BAS;
+      const ancien = masqueManette;
+      masqueManette = m;
+      majTactile(m, ancien);
+    };
+    manette.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      activerAudio();
+      doigtManette = e.pointerId;
+      manette.setPointerCapture(e.pointerId);
+      const r = manette.getBoundingClientRect();
+      centre = { x: r.left + r.width / 2, y: r.top + r.height / 2, r: r.width / 2 };
+      bougerManette(e);
+    });
+    manette.addEventListener('pointermove', (e) => { if (e.pointerId === doigtManette) bougerManette(e); });
+    const lacherManette = (e) => {
+      if (e.pointerId !== doigtManette) return;
+      doigtManette = null;
+      masqueManette = 0;
+      manche.style.transform = '';
+      majTactile(0, 0);
+    };
+    manette.addEventListener('pointerup', lacherManette);
+    manette.addEventListener('pointercancel', lacherManette);
+
+    // --- Boutons d'action : enfoncés tant que le doigt reste dessus ---
+    for (const bouton of document.querySelectorAll('#boutons button')) {
+      const bit = T[bouton.dataset.touche];
+      const lacher = () => {
+        bouton.classList.remove('appuye');
+        masqueBoutons &= ~bit;
+        majTactile(0, 0);
+      };
+      bouton.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        activerAudio();
+        bouton.setPointerCapture(e.pointerId);
+        bouton.classList.add('appuye');
+        const ancien = masqueBoutons;
+        masqueBoutons |= bit;
+        majTactile(masqueBoutons, ancien);
+      });
+      bouton.addEventListener('pointerup', lacher);
+      bouton.addEventListener('pointercancel', lacher);
+    }
+
+    // --- Barre du haut ---
+    document.getElementById('barre-tactile').addEventListener('click', (e) => {
+      const bouton = e.target.closest('button');
+      if (!bouton) return;
+      const action = bouton.dataset.action;
+      if (action === 'menu') {
+        location.reload();
+      } else if (action === 'perso') {
+        const ids = Object.keys(PERSOS);
+        const actuel = moi.perso || ids[0];
+        envoyer({ t: 'perso', perso: ids[(ids.indexOf(actuel) + 1) % ids.length] });
+      } else if (action === 'carte') {
+        const ids = Object.keys(C.CARTES);
+        envoyer({ t: 'carte', id: ids[(ids.indexOf(C.carte.id) + 1) % ids.length] });
+      } else if (action === 'plein') {
+        pleinEcran();
+      }
+    });
+  }
+
+  /** Plein écran et, si le téléphone le permet, orientation paysage bloquée. */
+  function pleinEcran() {
+    const el = document.documentElement;
+    const demande = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!demande) return;
+    const promesse = demande.call(el);
+    if (promesse && promesse.then) {
+      promesse.then(() => {
+        if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => {});
+      }).catch(() => {});
+    }
+  }
+
+  /** Affiche la manette (une fois la partie lancée) ; les boutons réseau seulement en réseau. */
+  function montrerManette(reseau) {
+    document.body.classList.add('en-jeu');
+    for (const b of document.querySelectorAll('#tactile .reseau-seul')) b.style.display = reseau ? '' : 'none';
   }
 
   // ===========================================================================
   // ÉTAT DU CLIENT
   // ===========================================================================
   let socket = null;
+  let persoVoulu = null; // personnage choisi dans le menu, pour le mode réseau
   // Version « un seul fichier HTML » : NB.local existe et peut faire tourner la
   // partie dans la page, sans serveur (voir game/local.js).
   const LOCAL = NB.local || null;
@@ -2284,6 +2504,8 @@ NB.capacites = module.exports;
       const msg = JSON.parse(e.data);
       if (msg.t === 'bienvenue') {
         monId = msg.id;
+        // En réseau, on applique le personnage choisi dans le menu.
+        if (persoVoulu && !enLocal) envoyer({ t: 'perso', perso: persoVoulu });
         moi.connu = false;
         enAttente = [];
         historique = [];
@@ -4268,16 +4490,23 @@ NB.capacites = module.exports;
   // Démarrage. Avec le serveur Node, on se connecte tout de suite. Dans la
   // version « un seul fichier HTML », c'est le menu qui décide (local ou réseau).
   NB.client = {
+    tactile: TACTILE,
     demarrer(options) {
       enLocal = !!options.local;
+      persoVoulu = options.perso || null;
       if (enLocal) {
         TOUCHES = options.touches;
         delaiInterpolation = 20; // pas de réseau : presque aucun retard nécessaire
       }
+      montrerManette(!enLocal);
+      if (TACTILE) pleinEcran();
       connecter();
     },
   };
-  if (!LOCAL) connecter();
+  if (!LOCAL) {
+    montrerManette(true);
+    connecter();
+  }
   requestAnimationFrame(boucle);
 })();
 </script>
