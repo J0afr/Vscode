@@ -181,6 +181,16 @@
 <body>
 <div id="scene"><canvas id="jeu" width="1280" height="720"></canvas></div>
 <div id="alerte"></div>
+<noscript>
+  <div style="position:fixed;inset:0;z-index:99;background:#1f1c30;color:#fff;padding:28px;font:17px/1.5 'Trebuchet MS',sans-serif;overflow:auto">
+    <h2 style="color:#ffd23f;margin-top:0">Le jeu ne peut pas démarrer ici</h2>
+    <p>Cette page est ouverte dans un <b>aperçu de fichier</b> (ou un navigateur sans JavaScript) :
+       le jeu a besoin de JavaScript pour fonctionner.</p>
+    <p>Ouvre-la plutôt dans <b>Safari</b> ou <b>Chrome</b>, à l'adresse du serveur :<br>
+       <code style="color:#ffd23f">http://&lt;adresse-IP-de-la-VM&gt;/</code></p>
+    <p>(le téléphone doit être sur le même Wi-Fi que la VM)</p>
+  </div>
+</noscript>
 <div id="tactile">
   <div id="manette" class="zone"><div id="manche"></div></div>
   <div id="boutons" class="zone">
