@@ -304,10 +304,21 @@
   }
 
   function lancerReseau() {
+    // Page ouverte comme simple fichier (sans serveur web) : on ne connaît pas
+    // l'adresse de la VM, on la demande une fois et on la retient.
+    let serveur = null;
+    if (location.protocol === 'file:') {
+      let defaut = '';
+      try { defaut = localStorage.getItem('nb-serveur') || ''; } catch (e) { /* stockage indisponible */ }
+      serveur = window.prompt('Adresse IP de la VM qui héberge le jeu (ex. 192.168.1.42) :', defaut);
+      if (!serveur || !serveur.trim()) return;
+      serveur = serveur.trim();
+      try { localStorage.setItem('nb-serveur', serveur); } catch (e) { /* stockage indisponible */ }
+    }
     panneau.style.display = 'none';
     document.getElementById('touches').innerHTML =
       '<div>' + AIDE_RESEAU + '</div><div><kbd>Échap</kbd> retour au menu</div>';
-    NB.client.demarrer({ local: false, perso: config.perso1 });
+    NB.client.demarrer({ local: false, perso: config.perso1, serveur });
   }
 
   function finir(gagnant) {

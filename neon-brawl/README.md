@@ -199,6 +199,17 @@ Sur téléphone, le menu propose de jouer contre l'ordinateur, contre le mannequ
 ou en réseau contre les autres (PC ou téléphones). En mode portrait, un message
 demande de tourner le téléphone.
 
+## Utiliser `neon-brawl.html` comme simple fichier (sans serveur web)
+
+Le fichier est autonome. Ouvert dans un **vrai navigateur** (JavaScript activé), il
+permet de jouer contre l'ordinateur ou le mannequin sans rien installer.
+Le bouton « En réseau » demande alors l'adresse IP de la VM (retenue ensuite) et
+se connecte au serveur de jeu.
+
+Attention : l'aperçu de fichiers d'un téléphone (Fichiers sur iPhone, par exemple)
+n'exécute pas le JavaScript et n'affiche pas le jeu. Il faut ouvrir le fichier
+avec une application qui contient un vrai navigateur.
+
 ## Le WebSocket
 
 Les navigateurs et le serveur de jeu communiquent par **WebSocket** : une connexion

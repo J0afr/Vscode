@@ -2024,6 +2024,7 @@ const PAGE_WEB = `<!DOCTYPE html>
   // ===========================================================================
   let socket = null;
   let persoVoulu = null; // personnage choisi dans le menu, pour le mode réseau
+  let serveurManuel = null; // adresse de la VM saisie à la main (page ouverte comme simple fichier)
   // Version « un seul fichier HTML » : NB.local existe et peut faire tourner la
   // partie dans la page, sans serveur (voir game/local.js).
   const LOCAL = NB.local || null;
@@ -2065,6 +2066,11 @@ const PAGE_WEB = `<!DOCTYPE html>
   //   2. le port 3000 directement, si Apache n'a pas ce relais.
   // Quand la page est servie par le serveur de jeu lui-même, l'adresse 1 suffit.
   function adressesServeur() {
+    // Page ouverte comme simple fichier : l'adresse de la VM a été saisie dans le menu.
+    if (serveurManuel) {
+      const h = serveurManuel.replace(/^\\w+:\\/\\//, '').replace(/\\/.*$/, '');
+      return h.indexOf(':') >= 0 ? ['ws://' + h + '/ws'] : ['ws://' + h + '/ws', 'ws://' + h + ':3000/ws'];
+    }
     const ws = location.protocol === 'https:' ? 'wss://' : 'ws://';
     const hote = location.hostname || 'localhost';
     if (!LOCAL) return [ws + location.host + '/ws'];
@@ -2080,7 +2086,10 @@ const PAGE_WEB = `<!DOCTYPE html>
     const hote = location.hostname || '(fichier ouvert sans serveur web)';
     const adresses = adressesServeur().map((a) => '<code>' + a + '</code>').join(' puis ');
     let conseils = '';
-    if (location.protocol === 'file:') {
+    if (serveurManuel) {
+      conseils = '<li>Vérifie l\\'adresse saisie (<code>' + serveurManuel.replace(/</g, '&lt;') + '</code>) : '
+        + 'c\\'est celle de la VM (<code>hostname -I</code>), et le téléphone doit être sur le même Wi-Fi.</li>';
+    } else if (location.protocol === 'file:') {
       conseils = '<li>Ce fichier a été ouvert directement depuis le disque. Pour jouer à plusieurs, ouvre '
         + 'plutôt <code>http://&lt;IP-de-la-VM&gt;/</code> dans le navigateur.</li>';
     } else if (hote === 'localhost' || hote === '127.0.0.1') {
@@ -4106,6 +4115,7 @@ const PAGE_WEB = `<!DOCTYPE html>
     demarrer(options) {
       enLocal = !!options.local;
       persoVoulu = options.perso || null;
+      serveurManuel = options.serveur || null;
       if (enLocal) {
         TOUCHES = options.touches;
         delaiInterpolation = 20; // pas de réseau : presque aucun retard nécessaire
