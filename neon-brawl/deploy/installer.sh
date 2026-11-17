@@ -8,7 +8,8 @@
 #   1. copie la page du jeu dans /var/www/html/index.html (servie par Apache)
 #   2. installe le serveur de jeu dans /opt/neon-brawl (pour jouer entre PC)
 #   3. crée un service systemd pour qu'il démarre tout seul avec la machine
-#   4. ouvre les ports 80 et 3000 dans le pare-feu ufw (s'il est installé)
+#   4. configure Apache pour qu'il relaie le WebSocket du jeu (adresse /ws)
+#   5. ouvre les ports 80 et 3000 dans le pare-feu ufw (s'il est installé)
 # =============================================================================
 set -e
 
@@ -24,7 +25,7 @@ if ! command -v node >/dev/null; then
   exit 1
 fi
 
-echo "1/4  Page du jeu -> /var/www/html/index.html"
+echo "1/5  Page du jeu -> /var/www/html/index.html"
 mkdir -p /var/www/html
 if [ -f /var/www/html/index.html ]; then
   cp /var/www/html/index.html "/var/www/html/index.html.ancien"
@@ -32,7 +33,7 @@ if [ -f /var/www/html/index.html ]; then
 fi
 cp "$ICI/neon-brawl.html" /var/www/html/index.html
 
-echo "2/4  Serveur de jeu -> /opt/neon-brawl"
+echo "2/5  Serveur de jeu -> /opt/neon-brawl"
 mkdir -p /opt/neon-brawl
 cp "$ICI/neon-brawl-tout-en-un.js" /opt/neon-brawl/
 cd /opt/neon-brawl
@@ -40,13 +41,28 @@ cd /opt/neon-brawl
 npm install --omit=dev express ws >/dev/null
 chown -R www-data:www-data /opt/neon-brawl
 
-echo "3/4  Service systemd (démarrage automatique)"
+echo "3/5  Service systemd (démarrage automatique)"
 cp "$ICI/deploy/neon-brawl.service" /etc/systemd/system/neon-brawl.service
 systemctl daemon-reload
 systemctl enable --now neon-brawl
 systemctl restart neon-brawl
 
-echo "4/4  Pare-feu"
+echo "4/5  Relais WebSocket dans Apache (port 80)"
+if command -v a2enmod >/dev/null; then
+  a2enmod -q proxy proxy_http proxy_wstunnel
+  cp "$ICI/deploy/neon-brawl-apache.conf" /etc/apache2/conf-available/neon-brawl.conf
+  a2enconf -q neon-brawl
+  if apache2ctl configtest 2>/dev/null; then
+    systemctl reload apache2 2>/dev/null || systemctl restart apache2
+    echo "     les joueurs n'ont besoin que du port 80"
+  else
+    echo "     ATTENTION : la configuration d'Apache est invalide (apache2ctl configtest)"
+  fi
+else
+  echo "     Apache n'est pas installé : le jeu passera par le port 3000"
+fi
+
+echo "5/5  Pare-feu"
 if command -v ufw >/dev/null; then
   ufw allow 80/tcp >/dev/null
   ufw allow 3000/tcp >/dev/null

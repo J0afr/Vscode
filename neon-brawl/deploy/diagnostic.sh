@@ -99,6 +99,15 @@ if command -v curl >/dev/null; then
   for ip in $IPS; do
     if curl -s -m 3 -o /dev/null "http://$ip/"; then ok "La page répond sur http://$ip/"; else pb "La page ne répond pas sur http://$ip/"; fi
     if curl -s -m 3 -o /dev/null "http://$ip:3000/"; then ok "Le serveur de jeu répond sur http://$ip:3000/"; else pb "Le serveur de jeu ne répond pas sur http://$ip:3000/"; fi
+    # Poignée de main WebSocket à travers Apache : la réponse attendue est « 101 ».
+    code=$(curl -s -m 3 -o /dev/null -w '%{http_code}' --http1.1 -H 'Connection: Upgrade' -H 'Upgrade: websocket' \
+      -H 'Sec-WebSocket-Version: 13' -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' "http://$ip/ws")
+    if [ "$code" = "101" ]; then
+      ok "Le WebSocket passe par Apache : ws://$ip/ws (seul le port 80 est nécessaire)."
+    else
+      info "Le WebSocket ne passe pas par Apache (code $code) : le jeu utilisera le port 3000.
+            -> pour n'utiliser que le port 80 : sudo bash deploy/installer.sh"
+    fi
   done
 else
   info "curl n'est pas installé : test sauté (sudo apt install -y curl)."

@@ -361,15 +361,30 @@
     if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message));
   }
 
+  // Adresses possibles du WebSocket du serveur de jeu, essayées à tour de rôle :
+  //   1. « /ws » sur la même adresse que la page : Apache relaie au serveur
+  //      de jeu (voir deploy/neon-brawl-apache.conf), seul le port 80 sert ;
+  //   2. le port 3000 directement, si Apache n'a pas ce relais.
+  // Quand la page est servie par le serveur de jeu lui-même, l'adresse 1 suffit.
+  function adressesServeur() {
+    const ws = location.protocol === 'https:' ? 'wss://' : 'ws://';
+    const hote = location.hostname || 'localhost';
+    if (!LOCAL) return [ws + location.host + '/ws'];
+    const liste = [ws + hote + ':3000/ws'];
+    if (location.protocol.startsWith('http')) liste.unshift(ws + location.host + '/ws');
+    return liste;
+  }
+  let essai = 0;
+
   function connecter() {
     elStatut.textContent = 'connexion…';
+    let ouvert = false;
     if (enLocal) {
       socket = LOCAL.creerSocket();
-    } else if (LOCAL) {
-      // Page servie par Apache : le serveur de jeu écoute à côté, sur le port 3000.
-      socket = new WebSocket('ws://' + (location.hostname || 'localhost') + ':3000');
     } else {
-      socket = new WebSocket('ws://' + location.host);
+      const adresses = adressesServeur();
+      socket = new WebSocket(adresses[essai % adresses.length]);
+      socket.addEventListener('open', () => { ouvert = true; });
     }
 
     socket.addEventListener('message', (e) => {
@@ -385,11 +400,13 @@
     });
 
     socket.addEventListener('close', () => {
-      elStatut.textContent = LOCAL
-        ? 'serveur de jeu introuvable sur le port 3000 — nouvelle tentative…'
-        : 'déconnecté — nouvelle tentative…';
+      // Jamais ouverte : on essaiera l'autre adresse. Sinon, on retente la même.
+      if (!ouvert) essai++;
+      elStatut.textContent = ouvert
+        ? 'déconnecté — nouvelle tentative…'
+        : 'serveur de jeu introuvable — nouvelle tentative…';
       monId = null;
-      setTimeout(connecter, 1000);
+      setTimeout(connecter, ouvert ? 1000 : 600);
     });
   }
 

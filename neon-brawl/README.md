@@ -183,10 +183,21 @@ joueur 2 flèches + `K` `L` `M` `O` (attrape `I`, spécial `P`).
 
 Comme la version tout-en-un, ce fichier est régénéré par `npm run assembler`.
 
+## Le WebSocket
+
+Les navigateurs et le serveur de jeu communiquent par **WebSocket** : une connexion
+qui reste ouverte, par laquelle chaque navigateur envoie ses touches 60 fois par
+seconde et reçoit l'état de la partie 30 fois par seconde.
+
+Avec Apache, ce WebSocket passe par le port 80, à l'adresse `ws://<IP-de-la-VM>/ws` :
+Apache le relaie au serveur de jeu (`deploy/neon-brawl-apache.conf`, installé par
+`deploy/installer.sh`). Les joueurs n'ont donc besoin que de `http://<IP-de-la-VM>/`.
+Si ce relais n'est pas en place, la page se rabat toute seule sur le port 3000.
+
 ## Installation complète sur la VM (Apache + serveur de jeu)
 
 Une seule commande installe la page dans Apache, le serveur de jeu, son démarrage
-automatique (systemd) et ouvre le pare-feu :
+automatique (systemd), le relais WebSocket dans Apache, et ouvre le pare-feu :
 
 ```bash
 sudo bash deploy/installer.sh
