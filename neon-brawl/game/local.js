@@ -46,6 +46,7 @@
   const enfonceesJ2 = new Set();
   let appuisBrefsJ2 = 0;
   window.addEventListener('keydown', (e) => {
+    if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName)) return; // on écrit un code
     if (e.code === 'Escape') { location.reload(); return; } // retour au menu
     if (enCours && config.adversaire === 'joueur' && e.code in TOUCHES_J2) {
       enfonceesJ2.add(e.code);
@@ -383,7 +384,11 @@
 
   function boutonsJouer() {
     return '<p><button class="gros" data-action="jouer">Jouer</button> '
-      + '<button class="gros" data-action="reseau" style="background:#4ac6ff">En réseau</button></p>';
+      + '<button class="gros" data-action="reseau" style="background:#4ac6ff">En réseau</button></p>'
+      + (NB.p2p
+        ? '<p><button data-action="heberger" style="background:#9be04a;color:#1d1a26;text-shadow:none">Héberger (sans serveur)</button> '
+          + '<button data-action="rejoindre" style="background:#ff8ad2;color:#1d1a26;text-shadow:none">Rejoindre (sans serveur)</button></p>'
+        : '');
   }
 
   function afficherMenu() {
@@ -432,11 +437,15 @@
       lancerPartie();
     } else if (bouton.dataset.action === 'reseau') {
       lancerReseau();
+    } else if (bouton.dataset.action === 'heberger') {
+      NB.p2p.heberger({ perso: config.perso1 });
+    } else if (bouton.dataset.action === 'rejoindre') {
+      NB.p2p.rejoindre({ perso: config.perso1 });
     } else if (bouton.dataset.action === 'menu') {
       location.reload();
     }
   });
 
-  NB.local = { creerSocket: () => fausseConnexion };
+  NB.local = { creerSocket: () => fausseConnexion, aideReseau: AIDE_RESEAU };
   afficherMenu();
 })();

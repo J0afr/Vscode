@@ -1870,6 +1870,8 @@ const PAGE_WEB = `<!DOCTYPE html>
 
   window.addEventListener('keydown', (e) => {
     activerAudio();
+    // Dans une zone de texte (code à coller…), les touches servent à écrire.
+    if (e.target && /^(TEXTAREA|INPUT)$/.test(e.target.tagName)) return;
     if (e.code in TOUCHES) {
       enfoncees.add(e.code);
       appuisBrefs |= TOUCHES[e.code];
@@ -2024,6 +2026,8 @@ const PAGE_WEB = `<!DOCTYPE html>
   // ===========================================================================
   let socket = null;
   let persoVoulu = null; // personnage choisi dans le menu, pour le mode réseau
+  let socketFourni = null;           // connexion toute faite (partie sans serveur) au lieu d'un WebSocket
+  let etiquetteReseau = 'arène libre'; // nom du mode affiché en haut à gauche
   let serveurManuel = null; // adresse de la VM saisie à la main (page ouverte comme simple fichier)
   // Version « un seul fichier HTML » : NB.local existe et peut faire tourner la
   // partie dans la page, sans serveur (voir game/local.js).
@@ -2109,7 +2113,9 @@ const PAGE_WEB = `<!DOCTYPE html>
   function connecter() {
     elStatut.textContent = 'connexion…';
     let ouvert = false;
-    if (enLocal) {
+    if (socketFourni) {
+      socket = socketFourni();
+    } else if (enLocal) {
       socket = LOCAL.creerSocket();
     } else {
       const adresses = adressesServeur();
@@ -2136,6 +2142,15 @@ const PAGE_WEB = `<!DOCTYPE html>
     });
 
     socket.addEventListener('close', () => {
+      if (socketFourni) {
+        // Partie sans serveur : si l'hôte part, la partie est finie.
+        monId = null;
+        elStatut.textContent = 'connexion perdue';
+        window.alerteNB('Partie terminée',
+          '<p>La connexion avec l\\'hôte a été coupée (il a quitté la partie, ou le réseau a lâché).</p>'
+          + '<p>Appuie sur <code>Échap</code> (ou le bouton Menu) pour revenir au menu.</p>');
+        return;
+      }
       // Jamais ouverte : on essaiera l'autre adresse. Sinon, on retente la même.
       if (!ouvert) {
         essai++;
@@ -2175,7 +2190,7 @@ const PAGE_WEB = `<!DOCTYPE html>
     if (historique.length > 30) historique.shift();
 
     const humains = etat.joueurs.filter((j) => j.nom !== 'Mannequin').length;
-    elStatut.textContent = (enLocal ? 'partie locale' : 'arène libre · ' + humains + ' joueur(s) en ligne') + ' · ' + C.carte.nom;
+    elStatut.textContent = (enLocal ? 'partie locale' : etiquetteReseau + ' · ' + humains + ' joueur(s) en ligne') + ' · ' + C.carte.nom;
 
     // --- Réconciliation du joueur local ---
     const officiel = carte.get(monId);
@@ -4115,6 +4130,9 @@ const PAGE_WEB = `<!DOCTYPE html>
     demarrer(options) {
       enLocal = !!options.local;
       persoVoulu = options.perso || null;
+      socketFourni = options.socketFourni || null;
+      etiquetteReseau = options.etiquette || 'arène libre';
+      if (options.delai) delaiInterpolation = options.delai;
       serveurManuel = options.serveur || null;
       if (enLocal) {
         TOUCHES = options.touches;

@@ -124,6 +124,7 @@ ${lire(`game/${nom}.js`)}
 NB.${nom} = module.exports;
 })();`));
 }
+partage.push(balise('game/p2p.js', lire('game/p2p.js')));
 partage.push(balise('game/local.js', lire('game/local.js')));
 const pageAutonome = lire('public/index.html').replace('<!--NB_PARTAGE-->', () => partage.join('\n'));
 fs.writeFileSync(path.join(racine, 'neon-brawl.html'), pageAutonome + '\n');

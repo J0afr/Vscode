@@ -138,6 +138,7 @@ entrée dans `STYLES` (`public/index.html`) pour son apparence.
 | `game/combat.js` | Coups, dégâts, éjections, bouclier, attrape, pertes de vie (serveur uniquement) |
 | `game/capacites.js` | Capacités élémentaires : projectiles, zones et pièges (serveur uniquement) |
 | `game/local.js` | Partie sans serveur (menu, 2 joueurs sur un clavier, ordinateur) pour `neon-brawl.html` |
+| `game/p2p.js` | Parties à plusieurs sans serveur : l'hôte fait tourner la partie, connexion par codes (WebRTC) |
 | `public/index.html` | Tout le client dans un seul fichier : réseau, affichage, effets, sons |
 
 Le serveur injecte `constants.js`, `characters.js` et `physics.js` dans la page au
@@ -198,6 +199,34 @@ La même page s'adapte toute seule aux écrans tactiles : il suffit d'ouvrir
 Sur téléphone, le menu propose de jouer contre l'ordinateur, contre le mannequin,
 ou en réseau contre les autres (PC ou téléphones). En mode portrait, un message
 demande de tourner le téléphone.
+
+## Jouer à plusieurs SANS serveur (Héberger / Rejoindre)
+
+Dans `neon-brawl.html`, le menu propose **Héberger (sans serveur)** et **Rejoindre
+(sans serveur)**. Aucun Node.js ni Apache n'est nécessaire : un joueur héberge la
+partie dans sa propre page, les autres s'y connectent directement (WebRTC).
+
+Comme il n'y a pas de serveur pour présenter les appareils entre eux, on échange
+deux codes en les copiant-collant (par message, mail, etc.) :
+
+1. **L'hôte** clique sur « Héberger » : un code d'invitation s'affiche. Il l'envoie à son ami.
+2. **L'ami** clique sur « Rejoindre », colle ce code, clique sur « Générer ma réponse »
+   et renvoie le nouveau code à l'hôte.
+3. **L'hôte** colle la réponse et clique sur « Connecter » : la partie démarre chez l'ami.
+
+Pour un autre ami, l'hôte clique sur « + Inviter un joueur » (bouton « 👥 Inviter »
+en haut à gauche pendant la partie). Jusqu'à 8 joueurs.
+
+À savoir :
+
+- Les appareils doivent être sur le **même réseau** (même Wi-Fi, pas un réseau « invité »)
+  et ce réseau ne doit pas isoler les appareils entre eux. Sur certains réseaux
+  d'entreprise ou de cours, les connexions directes sont bloquées : dans ce cas,
+  utiliser le serveur de jeu.
+- L'hôte doit **garder son onglet ouvert et visible** : c'est lui qui fait tourner la
+  partie. S'il part, la partie s'arrête pour tout le monde.
+- Un invité qui n'envoie plus rien pendant 10 secondes est retiré de la partie.
+- Ce mode ne fonctionne que dans `neon-brawl.html`, pas avec le serveur Node.
 
 ## Utiliser `neon-brawl.html` comme simple fichier (sans serveur web)
 
