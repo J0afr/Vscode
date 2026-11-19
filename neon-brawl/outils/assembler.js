@@ -15,7 +15,7 @@ const lire = (fichier) => fs.readFileSync(path.join(racine, fichier), 'utf8').tr
 const indenter = (texte) => texte.split('\n').map((l) => (l ? '    ' + l : l)).join('\n');
 
 // Modules du jeu, dans l'ordre où ils dépendent les uns des autres.
-const MODULES = ['constants', 'characters', 'physics', 'combat', 'capacites'];
+const MODULES = ['constants', 'characters', 'physics', 'progression', 'combat', 'capacites'];
 
 // La page est rangée dans une chaîne `...` : on protège les caractères spéciaux.
 const page = lire('public/index.html')
@@ -114,7 +114,7 @@ charger('serveur');
 // telle quelle sur un serveur web (Apache…) ou à ouvrir par double-clic.
 // =============================================================================
 const balise = (titre, code) => `<script>\n// ---- ${titre} ----\n${code}\n</script>`;
-const partage = ['constants', 'characters', 'physics'].map((nom) => balise(`game/${nom}.js`, lire(`game/${nom}.js`)));
+const partage = ['constants', 'characters', 'physics', 'progression'].map((nom) => balise(`game/${nom}.js`, lire(`game/${nom}.js`)));
 // combat.js et capacites.js sont écrits pour Node (require / module.exports) : on l'enveloppe.
 for (const nom of ['combat', 'capacites']) {
   partage.push(balise(`game/${nom}.js`, `(function () {
@@ -124,6 +124,7 @@ ${lire(`game/${nom}.js`)}
 NB.${nom} = module.exports;
 })();`));
 }
+partage.push(balise('game/ia.js', lire('game/ia.js')));
 partage.push(balise('game/p2p.js', lire('game/p2p.js')));
 partage.push(balise('game/local.js', lire('game/local.js')));
 const pageAutonome = lire('public/index.html').replace('<!--NB_PARTAGE-->', () => partage.join('\n'));

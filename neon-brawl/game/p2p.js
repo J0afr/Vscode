@@ -25,7 +25,7 @@
   const physics = NB.physics;
   const combat = NB.combat;
   const capacites = NB.capacites;
-  const { PERSOS } = NB.persos;
+  const { PERSOS, BASE } = NB.persos;
 
   const LISTE_PERSOS = Object.keys(PERSOS);
   const COULEURS = ['#00e5ff', '#ff2bd6', '#ffb300', '#6bff4a', '#b388ff', '#ff5252', '#40ffc8', '#ff8a3d'];
@@ -65,7 +65,7 @@
       id,
       nom: 'Joueur ' + id,
       couleur: couleurLibre(),
-      perso: LISTE_PERSOS[(id - 1) % LISTE_PERSOS.length],
+      perso: BASE[(id - 1) % BASE.length],
       degats: 0, brulure: 0, vies: C.VIES,
       touches: 0, file: [], acquitte: 0, retour: 0,
       ...physics.nouvelEtat(0, 0),
@@ -125,18 +125,6 @@
     joueur.acquitte = input.seq;
   }
 
-  const arrondi = (n) => Math.round(n * 100) / 100;
-
-  function instantane(j) {
-    const s = {
-      id: j.id, nom: j.nom, couleur: j.couleur, perso: j.perso,
-      degats: Math.round(j.degats), vies: j.vies, acq: j.acquitte,
-      brulure: j.brulure > 0 ? 1 : 0,
-    };
-    for (const champ of physics.CHAMPS) s[champ] = typeof j[champ] === 'number' ? arrondi(j[champ]) : j[champ];
-    return s;
-  }
-
   function avancerSimulation() {
     salon.tick++;
     const liste = [...salon.joueurs.values()];
@@ -164,7 +152,7 @@
     const base = {
       t: 'etat', tick: salon.tick, carte: C.carte.id,
       objets: capacites.instantane(salon.objets),
-      joueurs: [...salon.joueurs.values()].map(instantane),
+      joueurs: [...salon.joueurs.values()].map(combat.instantaneJoueur),
     };
     // L'hôte reçoit l'état à chaque tick (60 fois par seconde)…
     versHote(JSON.stringify({ ...base, ev: evenementsTick }));

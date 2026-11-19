@@ -36,7 +36,7 @@ const HOTE = '0.0.0.0'; // écoute sur toutes les cartes réseau (accès depuis 
 // mouvements avec exactement le même code que le serveur, on injecte dans la
 // page les fichiers partagés de game/ à la place du marqueur <!--NB_PARTAGE-->.
 // Ainsi il n'y a aucune duplication de code et toujours une seule page servie.
-const FICHIERS_PARTAGES = ['constants.js', 'characters.js', 'physics.js'];
+const FICHIERS_PARTAGES = ['constants.js', 'characters.js', 'physics.js', 'progression.js'];
 
 function construirePage() {
   const page = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
@@ -66,6 +66,7 @@ const wss = new WebSocketServer({ server: serveurHttp });
 // -----------------------------------------------------------------------------
 const COULEURS = ['#00e5ff', '#ff2bd6', '#ffb300', '#6bff4a', '#b388ff', '#ff5252', '#40ffc8', '#ff8a3d'];
 const LISTE_PERSOS = Object.keys(PERSOS);
+const { BASE } = require('./game/characters'); // personnages disponibles sans rien débloquer
 const joueurs = new Map(); // id -> joueur (humains et mannequin)
 let prochainId = 1;
 let mannequin = null;
@@ -88,7 +89,7 @@ function creerJoueur(socket) {
     socket,                 // null pour le mannequin
     nom: `Joueur ${id}`,
     couleur: couleurLibre(),
-    perso: LISTE_PERSOS[(id - 1) % LISTE_PERSOS.length],
+    perso: BASE[(id - 1) % BASE.length],
     degats: 0,
     brulure: 0,             // ticks de brûlure restants (élément feu)
     vies: C.VIES,
@@ -221,8 +222,6 @@ function avancerSimulation() {
   if (tick % C.ETAT_TOUS_LES === 0) diffuserEtat();
 }
 
-const arrondi = (n) => Math.round(n * 100) / 100;
-
 function diffuserEtat() {
   const etat = {
     t: 'etat',
@@ -230,17 +229,7 @@ function diffuserEtat() {
     ev: evenements,
     carte: C.carte.id,
     objets: capacites.instantane(objets),
-    joueurs: [...joueurs.values()].map((j) => {
-      const s = {
-        id: j.id, nom: j.nom, couleur: j.couleur, perso: j.perso,
-        degats: Math.round(j.degats), vies: j.vies, acq: j.acquitte,
-        brulure: j.brulure > 0 ? 1 : 0,
-      };
-      for (const champ of physics.CHAMPS) {
-        s[champ] = typeof j[champ] === 'number' ? arrondi(j[champ]) : j[champ];
-      }
-      return s;
-    }),
+    joueurs: [...joueurs.values()].map(combat.instantaneJoueur),
   };
   evenements = [];
   const texte = JSON.stringify(etat);

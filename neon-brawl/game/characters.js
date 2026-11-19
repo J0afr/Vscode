@@ -1,5 +1,5 @@
 // =============================================================================
-// characters.js — Les 6 personnages (un par élément) et la table des attaques.
+// characters.js — Les personnages (6 de base, Sylve et 10 à débloquer) et la table des attaques.
 // Fichier partagé serveur / navigateur (voir constants.js).
 // =============================================================================
 (function (racine) {
@@ -15,7 +15,30 @@
     air:    { nom: 'Air',    couleur: '#7dffd0', effet: 'Bourrasque : envoie plus haut, et 2 sauts en l\'air' },
     foudre: { nom: 'Foudre', couleur: '#ffe14a', effet: 'Paralysie : fige la victime plus longtemps' },
     glace:  { nom: 'Glace',  couleur: '#c4f1ff', effet: 'Gel : la victime reste sonnée plus longtemps' },
+    // Éléments des personnages à débloquer. « mod » : réglages lus par combat.js.
+    nature:  { nom: 'Nature',  couleur: '#38c06a', effet: 'Sève : soigne un peu le lanceur à chaque coup', mod: { soin: 1.5 } },
+    lumiere: { nom: 'Lumière', couleur: '#ffdca8', effet: 'Éclat : coups plus puissants, impact plus marqué', mod: { degatsPlus: 1.1, gelPlus: 4 } },
+    ombre:   { nom: 'Ombre',   couleur: '#8a5cff', effet: 'Poison : la victime perd des points lentement', mod: { poison: 200 } },
+    metal:   { nom: 'Métal',   couleur: '#aab7c9', effet: 'Acier : écrase les boucliers, repousse plus fort', mod: { bouclierDmg: 1.8, ejectionPlus: 1.08 } },
   };
+
+  // ---------------------------------------------------------------------------
+  // Petits constructeurs de capacités (pour garder les fiches de personnages courtes)
+  // ---------------------------------------------------------------------------
+  /** Un tir : crée un projectile (voir capacites.js). */
+  function tir(nom, t, objet) {
+    return { nom, debut: t.debut, actif: t.actif || 4, total: t.total, recharge: t.recharge, boites: [],
+      geste: t.geste || [44, -36, 0], objet: Object.assign({ type: 'projectile' }, objet) };
+  }
+  /** Une zone ou un piège posé dans l'arène (voir capacites.js). */
+  function piege(nom, t, objet) {
+    return { nom, debut: t.debut, actif: t.actif || 4, total: t.total, recharge: t.recharge, boites: [],
+      geste: t.geste || [34, -12, 0], objet: Object.assign({ type: 'zone' }, objet) };
+  }
+  /** Une attaque de corps à corps avec élan (ruée, plongeon, tourbillon…). */
+  function ruee(nom, t) {
+    return Object.assign({ nom, geste: [40, -34, 0] }, t);
+  }
 
   // ---------------------------------------------------------------------------
   // Personnages
@@ -182,6 +205,205 @@
           dx: 10, dy: 0, deg: 6, base: 3.5, ech: 0.07, angle: -60 },
       },
     },
+
+    // =========================================================================
+    // SYLVE — le rôdeur : il change d'arme (capacité 2) et tire avec l'arme
+    // équipée (capacité 1). Armes : arc, boomerang, pistolet, bombe, hache.
+    // =========================================================================
+    sylve: {
+      nom: 'Sylve', element: 'nature', description: 'Rôdeur : change d\'arme (arc, boomerang, pistolet…)',
+      l: 46, h: 72, taille: 1.15,
+      marche: 3.0, course: 6.6, accelSol: 1.1,
+      vitAir: 5.2, accelAir: 0.5,
+      saut: 13.4, doubleSaut: 12.6, sautsAir: 1,
+      gravite: 0.6, chuteMax: 10.5, chuteRapide: 15.5,
+      poids: 1.0, puissance: 1.02, cadence: 0.92,
+      // Capacité 1 : tire avec l'arme équipée (voir « armes »).
+      spe1: {
+        nom: 'Arme équipée', debut: 8, actif: 4, total: 34, recharge: 60, boites: [], geste: [44, -36, 0],
+        armes: [
+          { nom: 'Arc', debut: 10, actif: 3, total: 34, recharge: 40,
+            objet: { type: 'projectile', style: 'fleche', vitesse: 17, r: 10, vie: 55, dy: -38,
+              deg: 6.5, base: 3.5, ech: 0.07, angle: 22 } },
+          { nom: 'Boomerang', debut: 8, actif: 3, total: 30, recharge: 75,
+            objet: { type: 'projectile', style: 'boomerang', vitesse: 15, r: 18, vie: 260, dy: -38,
+              boomerang: true, allee: 32, traverseSol: true, perce: true,
+              deg: 5, base: 2.5, ech: 0.05, angle: 35 } },
+          { nom: 'Pistolet', debut: 5, actif: 12, total: 34, recharge: 55,
+            objet: { type: 'projectile', style: 'balle', rafale: 4, vitesse: 21, r: 8, vie: 34, dy: -38,
+              deg: 2.4, base: 2, ech: 0.03, angle: 12, sansGel: true } },
+          { nom: 'Bombe', debut: 12, actif: 3, total: 40, recharge: 120,
+            objet: { type: 'projectile', style: 'bombe', vitesse: 7.5, vy: -5.5, g: 0.42, r: 14, vie: 80, dy: -40,
+              explose: { style: 'explosion', r: 78, vie: 9, deg: 11, base: 5.5, ech: 0.12, angle: 60, deuxCotes: true } } },
+          { nom: 'Hache de jet', debut: 14, actif: 3, total: 42, recharge: 90,
+            objet: { type: 'projectile', style: 'hache', vitesse: 8.5, vy: -6, g: 0.38, r: 20, vie: 90, dy: -44,
+              deg: 11, base: 5.2, ech: 0.13, angle: 48 } },
+        ],
+      },
+      // Capacité 2 : passe à l'arme suivante (la touche bas + spécial).
+      spe2: { nom: 'Changer d\'arme', debut: 3, actif: 2, total: 16, recharge: 18, boites: [], geste: [10, -60, 0], changerArme: true },
+      // Capacité aérienne : tir plongeant, avec un recul qui le propulse vers le haut.
+      spe3: {
+        nom: 'Tir plongeant', debut: 7, actif: 4, total: 32, recharge: 90, boites: [], geste: [30, -20, 0],
+        elan: { vy: -8.5 },
+        objet: { type: 'projectile', style: 'fleche', vitesse: 8, vy: 10, r: 11, vie: 60, dy: -20,
+          deg: 7, base: 4, ech: 0.08, angle: -55 },
+      },
+    },
+
+    // =========================================================================
+    // LES 10 PERSONNAGES À DÉBLOQUER (mode solo, voir progression.js)
+    //   Normal     : Épine, Lumi, Boulon
+    //   Difficile  : Brume, Orage, Yéti
+    //   Impossible : Dragon, Spectre, Colosse, Aurore
+    // =========================================================================
+    epine: {
+      nom: 'Épine', element: 'nature', description: 'Tank hérissé de piquants',
+      l: 60, h: 80, taille: 1.4,
+      marche: 2.4, course: 5.3, accelSol: 0.75, vitAir: 4.4, accelAir: 0.35,
+      saut: 13.0, doubleSaut: 11.9, sautsAir: 1, gravite: 0.68, chuteMax: 11.5, chuteRapide: 17,
+      poids: 1.25, puissance: 1.12, cadence: 1.15,
+      spe1: tir('Épines', { debut: 9, actif: 14, total: 38, recharge: 90 },
+        { style: 'epine', rafale: 5, vitesse: 13, r: 9, vie: 40, deg: 2.6, base: 2.4, ech: 0.04, angle: 25, sansGel: true }),
+      spe2: piege('Ronces', { debut: 14, total: 40, recharge: 360, geste: [34, -12, 0] },
+        { style: 'piege', auSol: true, dx: 80, l: 50, h: 34, vie: 480, delai: 28, declenche: true, unique: true,
+          deg: 5, base: 0, ech: 0, angle: 0, fige: 60 }),
+      spe3: ruee('Toupie', { debut: 5, actif: 22, total: 40, recharge: 90, elan: { vy: -6.5, tenir: true },
+        boites: [[0, -40, 56]], deuxCotes: true, deg: 9, base: 5, ech: 0.09, angle: 75 }),
+    },
+    lumi: {
+      nom: 'Lumi', element: 'lumiere', description: 'Légère et lumineuse, 2 sauts en l\'air',
+      l: 44, h: 68, taille: 1.1,
+      marche: 3.1, course: 6.9, accelSol: 1.1, vitAir: 5.7, accelAir: 0.6,
+      saut: 13.0, doubleSaut: 12.4, sautsAir: 2, gravite: 0.52, chuteMax: 9.2, chuteRapide: 14.5,
+      poids: 0.78, puissance: 0.88, cadence: 0.88,
+      spe1: tir('Rayon', { debut: 8, total: 30, recharge: 70 },
+        { style: 'rayon', vitesse: 20, r: 11, vie: 38, perce: true, deg: 4.5, base: 3, ech: 0.05, angle: 28 }),
+      spe2: piege('Flash', { debut: 10, total: 36, recharge: 260, geste: [10, -50, 0] },
+        { style: 'explosion', dx: 0, l: 105, h: 120, vie: 8, deg: 6.5, base: 6, ech: 0.1, angle: 80, deuxCotes: true }),
+      spe3: ruee('Étoile filante', { debut: 4, actif: 14, total: 32, recharge: 85, suspend: true,
+        elan: { vx: 15, vy: -3, tenir: true }, geste: [40, -34, 0],
+        boites: [[28, -34, 34]], deg: 8, base: 4.5, ech: 0.09, angle: 40 }),
+    },
+    boulon: {
+      nom: 'Boulon', element: 'metal', description: 'Robot lourd, missiles et mines',
+      l: 56, h: 80, taille: 1.4,
+      marche: 2.7, course: 5.8, accelSol: 0.9, vitAir: 4.8, accelAir: 0.4,
+      saut: 13.0, doubleSaut: 11.9, sautsAir: 1, gravite: 0.68, chuteMax: 12, chuteRapide: 17.5,
+      poids: 1.3, puissance: 1.22, cadence: 1.05,
+      spe1: tir('Missile', { debut: 12, total: 40, recharge: 130 },
+        { style: 'missile', vitesse: 10, r: 13, vie: 60,
+          explose: { style: 'explosion', r: 56, vie: 8, deg: 7, base: 4.5, ech: 0.09, angle: 55, deuxCotes: true } }),
+      spe2: piege('Mine magnétique', { debut: 12, total: 36, recharge: 330, geste: [20, -8, 0] },
+        { style: 'piege', dx: 0, l: 34, h: 60, vie: 600, delai: 40, declenche: true, unique: true,
+          deg: 10, base: 5.5, ech: 0.1, angle: 80, deuxCotes: true }),
+      spe3: ruee('Marteau-fusée', { debut: 10, actif: 28, total: 46, recharge: 110, suspend: true,
+        elan: { vx: 0, vy: 16, tenir: true }, geste: [0, 10, 0],
+        boites: [[0, 2, 42]], deg: 13, base: 5, ech: 0.12, angle: -75 }),
+    },
+    brume: {
+      nom: 'Brume', element: 'ombre', description: 'Ninja très rapide, poison et esquives',
+      l: 40, h: 62, taille: 1.05,
+      marche: 3.5, course: 7.9, accelSol: 1.35, vitAir: 5.8, accelAir: 0.62,
+      saut: 13.8, doubleSaut: 12.8, sautsAir: 1, gravite: 0.6, chuteMax: 10.8, chuteRapide: 16.5,
+      poids: 0.78, puissance: 0.85, cadence: 0.78, dash: { vitesse: 16, recharge: 30 },
+      spe1: tir('Shuriken', { debut: 6, actif: 8, total: 28, recharge: 70 },
+        { style: 'shuriken', rafale: 5, vitesse: 15, r: 12, vie: 48, deg: 4, base: 2.8, ech: 0.05, angle: 28 }),
+      spe2: piege('Fumigène', { debut: 10, total: 34, recharge: 380, geste: [34, -12, 0] },
+        { style: 'nuage', auSol: true, dx: 70, l: 85, h: 90, vie: 150, intervalle: 22, sansGel: true,
+          deg: 1.6, base: 2.2, ech: 0, angle: 80 }),
+      spe3: ruee('Pas fantôme', { debut: 3, actif: 12, total: 28, recharge: 80, suspend: true, invul: 14,
+        elan: { vx: 17, vy: 0, tenir: true }, geste: [40, -34, 0],
+        boites: [[26, -32, 30]], deg: 7, base: 4, ech: 0.08, angle: 35 }),
+    },
+    orage: {
+      nom: 'Orage', element: 'foudre', description: 'Mage : boules d\'éclair et pluie d\'orage',
+      l: 46, h: 76, taille: 1.2,
+      marche: 2.8, course: 6.0, accelSol: 0.95, vitAir: 5.2, accelAir: 0.5,
+      saut: 13.1, doubleSaut: 12.3, sautsAir: 1, gravite: 0.56, chuteMax: 10, chuteRapide: 15,
+      poids: 0.92, puissance: 1.05, cadence: 1.05,
+      spe1: tir('Boule d\'éclair', { debut: 12, total: 40, recharge: 110 },
+        { style: 'orbe', vitesse: 6.5, r: 20, vie: 130, deg: 7, base: 4.5, ech: 0.1, angle: 35 }),
+      spe2: piege('Pluie d\'orage', { debut: 14, total: 44, recharge: 300, geste: [30, -60, 0] },
+        { style: 'colonne', auSol: true, dx: 150, l: 70, h: 260, vie: 70, intervalle: 12, sansGel: true,
+          deg: 3, base: 3.5, ech: 0.02, angle: 82 }),
+      spe3: ruee('Éclair-saut', { debut: 5, actif: 18, total: 36, recharge: 85, elan: { vy: -11.5 }, geste: [0, -80, 0],
+        boites: [[0, -40, 54]], deuxCotes: true, deg: 7, base: 5, ech: 0.09, angle: 80 }),
+    },
+    yeti: {
+      nom: 'Yéti', element: 'glace', description: 'Géant des neiges, avalanches',
+      l: 68, h: 92, taille: 1.6,
+      marche: 2.2, course: 4.9, accelSol: 0.55, vitAir: 4.1, accelAir: 0.32,
+      saut: 12.8, doubleSaut: 11.5, sautsAir: 1, gravite: 0.72, chuteMax: 12.5, chuteRapide: 18,
+      poids: 1.4, puissance: 1.2, cadence: 1.2,
+      spe1: tir('Boule de neige', { debut: 14, total: 44, recharge: 130 },
+        { style: 'boule', vitesse: 8, vy: -6, g: 0.4, r: 22, vie: 150, deg: 10, base: 5, ech: 0.12, angle: 40 }),
+      spe2: piege('Avalanche', { debut: 18, total: 50, recharge: 300, geste: [20, -4, 0] },
+        { style: 'onde', auSol: true, dx: 0, l: 200, h: 30, vie: 16, auSolSeulement: true, deuxCotes: true,
+          deg: 9, base: 6, ech: 0.1, angle: 80 }),
+      spe3: ruee('Chute glaciale', { debut: 12, actif: 30, total: 50, recharge: 110, suspend: true,
+        elan: { vx: 0, vy: 17, tenir: true }, geste: [0, 10, 0],
+        boites: [[0, 4, 46]], deg: 14, base: 5, ech: 0.13, angle: -75 }),
+    },
+    dragon: {
+      nom: 'Dragon', element: 'feu', description: 'Souffle brûlant, vole presque',
+      l: 62, h: 86, taille: 1.5,
+      marche: 2.9, course: 6.2, accelSol: 1.0, vitAir: 5.0, accelAir: 0.45,
+      saut: 13.4, doubleSaut: 12.6, sautsAir: 2, gravite: 0.62, chuteMax: 11, chuteRapide: 16.5,
+      poids: 1.2, puissance: 1.2, cadence: 1.0,
+      spe1: tir('Souffle', { debut: 8, actif: 26, total: 50, recharge: 120 },
+        { style: 'flamme', rafale: 3, vitesse: 11, r: 17, vie: 22, perce: true, deg: 1.8, base: 1.5, ech: 0, angle: 18, sansGel: true }),
+      spe2: piege('Pilier de feu', { debut: 14, total: 44, recharge: 280, geste: [30, -60, 0] },
+        { style: 'colonne', auSol: true, dx: 100, l: 36, h: 280, vie: 30, delai: 24,
+          deg: 9, base: 7, ech: 0.1, angle: 88 }),
+      spe3: ruee('Piqué', { debut: 10, actif: 26, total: 46, recharge: 100, suspend: true,
+        elan: { vx: 10, vy: 14, tenir: true }, geste: [22, 0, 0],
+        boites: [[22, 0, 42]], deg: 13, base: 5, ech: 0.12, angle: -60 }),
+    },
+    spectre: {
+      nom: 'Spectre', element: 'ombre', description: 'Fantôme flottant, cages d\'ombre',
+      l: 48, h: 74, taille: 1.2,
+      marche: 2.7, course: 5.9, accelSol: 0.9, vitAir: 5.4, accelAir: 0.55,
+      saut: 12.8, doubleSaut: 12.2, sautsAir: 2, gravite: 0.46, chuteMax: 8.5, chuteRapide: 14,
+      poids: 0.82, puissance: 1.0, cadence: 1.0,
+      spe1: tir('Orbe sombre', { debut: 13, total: 42, recharge: 120 },
+        { style: 'orbe', vitesse: 5.5, r: 24, vie: 150, perce: true, deg: 6, base: 3.5, ech: 0.07, angle: 40 }),
+      spe2: piege('Cage d\'ombre', { debut: 14, total: 40, recharge: 360, geste: [34, -12, 0] },
+        { style: 'piege', auSol: true, dx: 70, l: 55, h: 80, vie: 420, delai: 22, declenche: true, unique: true,
+          deg: 6, base: 0, ech: 0, angle: 0, fige: 85 }),
+      spe3: ruee('Dématérialisation', { debut: 4, actif: 16, total: 34, recharge: 75, suspend: true, invul: 20,
+        elan: { vx: 15, vy: -2, tenir: true }, geste: [40, -34, 0],
+        boites: [[28, -36, 34]], deg: 8, base: 4.5, ech: 0.09, angle: 45 }),
+    },
+    colosse: {
+      nom: 'Colosse', element: 'terre', description: 'Titan de pierre, écrase tout',
+      l: 74, h: 98, taille: 1.7,
+      marche: 2.0, course: 4.6, accelSol: 0.5, vitAir: 3.9, accelAir: 0.3,
+      saut: 12.6, doubleSaut: 11.2, sautsAir: 1, gravite: 0.78, chuteMax: 13, chuteRapide: 19,
+      poids: 1.55, puissance: 1.3, cadence: 1.25,
+      spe1: tir('Lancer de roc', { debut: 18, total: 52, recharge: 140 },
+        { style: 'rocher', vitesse: 8, vy: -6, g: 0.42, r: 28, vie: 160, deg: 14, base: 5.5, ech: 0.14, angle: 42 }),
+      spe2: piege('Séisme majeur', { debut: 20, total: 56, recharge: 320, geste: [20, -4, 0] },
+        { style: 'seisme', auSol: true, dx: 0, l: 260, h: 28, vie: 18, auSolSeulement: true, deuxCotes: true,
+          deg: 12, base: 7, ech: 0.12, angle: 80 }),
+      spe3: ruee('Saut écrasant', { debut: 14, actif: 32, total: 54, recharge: 120, suspend: true,
+        elan: { vx: 0, vy: 18, tenir: true }, geste: [0, 10, 0],
+        boites: [[0, 4, 50]], deg: 16, base: 5.5, ech: 0.14, angle: -75 }),
+    },
+    aurore: {
+      nom: 'Aurore', element: 'lumiere', description: 'Reine de lumière, redoutable partout',
+      l: 54, h: 82, taille: 1.3,
+      marche: 3.1, course: 6.8, accelSol: 1.1, vitAir: 5.4, accelAir: 0.55,
+      saut: 13.6, doubleSaut: 12.8, sautsAir: 2, gravite: 0.58, chuteMax: 10.5, chuteRapide: 16,
+      poids: 1.1, puissance: 1.12, cadence: 0.95,
+      spe1: tir('Lance de lumière', { debut: 8, total: 30, recharge: 60 },
+        { style: 'rayon', vitesse: 24, r: 13, vie: 40, perce: true, deg: 7, base: 4, ech: 0.09, angle: 30 }),
+      spe2: piege('Colonne céleste', { debut: 12, total: 44, recharge: 240, geste: [30, -60, 0] },
+        { style: 'colonne', auSol: true, dx: 120, l: 60, h: 300, vie: 24, delai: 20,
+          deg: 11, base: 7, ech: 0.13, angle: 88 }),
+      spe3: ruee('Ascension', { debut: 4, actif: 20, total: 38, recharge: 80, elan: { vy: -12.5 }, geste: [0, -80, 0],
+        boites: [[0, -40, 60]], deuxCotes: true, deg: 9, base: 5.5, ech: 0.1, angle: 85 }),
+    },
   };
 
   // ---------------------------------------------------------------------------
@@ -221,19 +443,30 @@
    * Durées de l'attaque en cours d'un joueur, adaptées à la cadence de son
    * personnage. Le coup touche quand  debut < joueur.t <= fin.
    */
+  const CACHE_ARMES = {};
   function infosAttaque(joueur) {
     const perso = PERSOS[joueur.perso] || PERSOS.ondine;
     // « spe1 », « spe2 » et « spe3 » sont les capacités propres au personnage.
     const special = joueur.atk === 'spe1' || joueur.atk === 'spe2' || joueur.atk === 'spe3';
-    const attaque = special ? perso[joueur.atk] : ATTAQUES[joueur.atk];
+    let attaque = special ? perso[joueur.atk] : ATTAQUES[joueur.atk];
     if (!attaque) return null;
+    // Capacité à armes (Sylve) : les durées, la portée et le projectile sont ceux de l'arme équipée.
+    if (attaque.armes) {
+      const n = attaque.armes.length;
+      const arme = (joueur.arme | 0) % n;
+      const cle = joueur.perso + ':' + joueur.atk + ':' + arme;
+      attaque = CACHE_ARMES[cle] || (CACHE_ARMES[cle] = Object.assign({}, attaque, attaque.armes[arme]));
+    }
     const debut = Math.round(attaque.debut * perso.cadence);
     const fin = debut + Math.max(2, Math.round(attaque.actif * perso.cadence));
     const total = Math.max(fin + 2, Math.round(attaque.total * perso.cadence));
     return { attaque, perso, debut, fin, total };
   }
 
-  const persos = { ELEMENTS, PERSOS, ATTAQUES, infosAttaque };
+  // Personnages disponibles dès le départ ; les autres se débloquent en solo.
+  const BASE = ['braise', 'ondine', 'brok', 'zephyr', 'zip', 'givre', 'sylve'];
+
+  const persos = { ELEMENTS, PERSOS, ATTAQUES, BASE, infosAttaque };
 
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = persos;

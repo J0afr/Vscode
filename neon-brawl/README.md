@@ -48,8 +48,9 @@ tu es éjecté loin. Tu perds une vie en sortant de l'écran. Chacun a 3 vies.
 | Capacité 1 de l'élément | `I` ou `F` |
 | Capacité 2 de l'élément | bas + `I` |
 | Capacité aérienne | `I` en l'air (ou haut + `I`) |
+| Dash | `E` |
 | Carte suivante (pour tout le monde, en réseau) | `Tab` |
-| Changer de personnage | `1` à `6` |
+| Changer de personnage (débloqué) | `1` à `9`, ou `P` pour le suivant |
 
 Maintenir haut, bas ou un côté en attaquant change le coup. En l'air, les deux
 boutons d'attaque donnent une attaque aérienne. Un bouclier maintenu trop
@@ -89,6 +90,80 @@ ne s'utilise qu'une fois par saut (elle se recharge en touchant le sol ou un bor
 
 Une capacité ne touche jamais celui qui l'a lancée.
 
+### Le dash
+
+Une impulsion rapide dans la direction où l'on regarde (ou où l'on pousse le joystick),
+au sol ou **en l'air** (une seule fois par saut ; il se recharge en touchant le sol ou un
+bord). Pendant un dash aérien, la gravité est suspendue. Le dash s'**annule** à tout moment
+(après 3 images) en sautant, en attaquant, en utilisant une capacité, en attrapant ou en
+levant le bouclier : l'action part avec l'élan du dash. Touches : `E` (réseau et joueur 1),
+`U` (joueur 2), bouton « dash » sur téléphone. Il a un temps de recharge d'une demi-seconde
+environ ; Brume dashe plus vite, les lourds moins loin.
+
+### Sylve, le rôdeur aux cinq armes
+
+Sylve est disponible dès le départ. Sa **capacité 1** tire avec l'**arme équipée** ; sa
+**capacité 2** (bas + spécial) **change d'arme**. L'arme équipée est montrée dans sa main,
+au-dessus de son nom et dans son panneau.
+
+| Arme | Effet | Recharge |
+| --- | --- | --- |
+| Arc | Flèche rapide, tir tendu | courte |
+| Boomerang | Part, ralentit, **revient** et touche encore au retour ; il se rattrape en revenant | moyenne |
+| Pistolet | Rafale de 4 balles très rapides, peu de dégâts chacune | moyenne |
+| Bombe | Tir en cloche, **explose** au contact (zone) | longue |
+| Hache de jet | Gros projectile lent en cloche, très puissant | moyenne |
+
+Sa capacité aérienne est un **tir plongeant** : il tire une flèche vers le bas et le recul le
+propulse vers le haut.
+
+### Mode solo : 10 personnages à débloquer
+
+Dans le menu, **Mode solo** propose trois modes de difficulté, des combats contre l'ordinateur
+de plus en plus fort. Chaque combat gagné **débloque le personnage battu**.
+
+| Mode | Combats | Personnages débloqués |
+| --- | --- | --- |
+| **Normal** | 3 (niveaux 1 à 3) | Épine, Lumi, Boulon |
+| **Difficile** (ouvert quand Normal est terminé) | 3 (niveaux 4 à 6) | Brume, Orage, Yéti |
+| **Impossible** (ouvert quand Difficile est terminé) | 4 (niveaux 7 à 10) | Dragon, Spectre, Colosse, Aurore |
+
+Une défaite se retente autant de fois qu'on veut. Un mode terminé permet une revanche sur son
+dernier combat. La progression est gardée dans le navigateur (`localStorage`) ; « Effacer ma
+progression » la remet à zéro. Pour **tout débloquer** (essai, démonstration) : ajouter
+`?tout=1` à l'adresse de la page. Les personnages verrouillés sont grisés dans les menus et
+refusés par les touches `1`-`9`/`P`.
+
+Les 10 personnages à débloquer :
+
+| Personnage | Élément | Style | Capacités (1 / 2 / aérienne) |
+| --- | --- | --- | --- |
+| **Épine** | Nature | Tank hérissé de piquants | Épines (rafale) / Ronces (piège qui fige) / Toupie |
+| **Lumi** | Lumière | Légère, 2 sauts en l'air | Rayon perçant / Flash / Étoile filante |
+| **Boulon** | Métal | Robot lourd | Missile (explose) / Mine magnétique / Marteau-fusée |
+| **Brume** | Ombre | Ninja très rapide | Shuriken / Fumigène / Pas fantôme (invulnérable) |
+| **Orage** | Foudre | Mage | Boule d'éclair / Pluie d'orage / Éclair-saut |
+| **Yéti** | Glace | Géant | Boule de neige / Avalanche / Chute glaciale |
+| **Dragon** | Feu | Boss, 2 sauts en l'air | Souffle / Pilier de feu / Piqué |
+| **Spectre** | Ombre | Fantôme flottant | Orbe sombre / Cage d'ombre / Dématérialisation |
+| **Colosse** | Terre | Titan très lourd | Lancer de roc / Séisme majeur / Saut écrasant |
+| **Aurore** | Lumière | Polyvalente, la plus forte | Lance de lumière / Colonne céleste / Ascension |
+
+Quatre nouveaux éléments : **Nature** (soigne un peu le lanceur à chaque coup), **Lumière**
+(coups plus puissants, impact plus marqué), **Ombre** (poison lent), **Métal** (écrase les
+boucliers, repousse un peu plus).
+
+### L'ordinateur (10 niveaux)
+
+`game/ia.js`. Le niveau règle le temps de réaction, l'agressivité, l'usage du dash, des
+capacités et de l'attrape, la défense (bouclier, esquive, évitement des projectiles à partir
+du niveau 5), les enchaînements sur un adversaire sonné, et la façon de se placer pour
+envoyer l'adversaire vers le bord. Du niveau 8 au niveau 10, il gagne de petits bonus de
+puissance et de poids. En « Combat rapide », le niveau se choisit de 1 à 10.
+
+Mesuré en faisant jouer l'ordinateur contre lui-même (40 duels par paire) : chaque palier de
+trois niveaux gagne environ 65 à 75 % des duels.
+
 ### S'accrocher au bord
 
 En tombant près du bord d'un sol, on s'y accroche automatiquement (sauf en
@@ -124,8 +199,10 @@ passe à la carte suivante pour tout le monde (les vies sont remises à zéro).
 Pour ajouter une carte : sa géométrie, sa vue et ses zones d'éjection dans `CARTES`
 (`game/constants.js`), et son décor dans `DECORS` (`public/index.html`).
 
-Pour ajouter un personnage : une entrée dans `PERSOS` (`game/characters.js`) et une
-entrée dans `STYLES` (`public/index.html`) pour son apparence.
+Pour ajouter un personnage : une entrée dans `PERSOS` (`game/characters.js`, les constructeurs
+`tir`, `piege` et `ruee` raccourcissent les capacités) et une entrée dans `STYLES`
+(`public/index.html`) pour son apparence. Pour en faire un personnage à débloquer, l'ajouter
+aussi à un combat de `SOLO` dans `game/progression.js`.
 
 ## Organisation du code
 
@@ -133,10 +210,12 @@ entrée dans `STYLES` (`public/index.html`) pour son apparence.
 | --- | --- |
 | `server.js` | Serveur Express + WebSocket, boucle de jeu à 60 Hz, envoi de l'état à 30 Hz |
 | `game/constants.js` | Constantes partagées : cartes, règles, touches |
-| `game/characters.js` | Éléments, statistiques des 6 personnages et table des attaques |
+| `game/characters.js` | Éléments, statistiques des 17 personnages et table des attaques |
 | `game/physics.js` | Simulation d'un joueur pour un tick : déplacements, plateformes, actions |
 | `game/combat.js` | Coups, dégâts, éjections, bouclier, attrape, pertes de vie (serveur uniquement) |
-| `game/capacites.js` | Capacités élémentaires : projectiles, zones et pièges (serveur uniquement) |
+| `game/capacites.js` | Capacités élémentaires : projectiles, boomerang, explosions, zones et pièges (serveur uniquement) |
+| `game/ia.js` | L'ordinateur, 10 niveaux (navigateur) |
+| `game/progression.js` | Personnages à débloquer et modes solo, sauvegarde (navigateur) |
 | `game/local.js` | Partie sans serveur (menu, 2 joueurs sur un clavier, ordinateur) pour `neon-brawl.html` |
 | `game/p2p.js` | Parties à plusieurs sans serveur : l'hôte fait tourner la partie, connexion par codes (WebRTC) |
 | `public/index.html` | Tout le client dans un seul fichier : réseau, affichage, effets, sons |

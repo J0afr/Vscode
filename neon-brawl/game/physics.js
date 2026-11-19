@@ -24,7 +24,7 @@
     'dir',                  // sens du regard : 1 = droite, -1 = gauche
     'sol',                  // vrai si le joueur est posé sur une surface
     'sauts',                // sauts aériens restants
-    'etat',                 // 'libre' | 'attaque' | 'charge' | 'bouclier' | 'esquive' | 'sonne' | 'bord' | 'mort'
+    'etat',                 // 'libre' | 'attaque' | 'charge' | 'bouclier' | 'esquive' | 'dash' | 'sonne' | 'bord' | 'mort'
     't',                    // nombre de ticks passés dans l'état courant
     'atk',                  // nom de l'attaque (ou du type d'esquive) en cours
     'charge',               // ticks de charge de l'attaque forte
@@ -42,6 +42,9 @@
     'cd1', 'cd2', 'cd3',    // temps de recharge des trois capacités
     'airSpe',               // capacité aérienne déjà utilisée depuis le dernier atterrissage
     'bordCd',               // délai avant de pouvoir se raccrocher à un bord
+    'cdDash',               // temps de recharge du dash
+    'dashAir',              // dash aérien déjà utilisé depuis le dernier atterrissage
+    'arme',                 // arme équipée (personnage qui change d'arme, comme Sylve)
   ];
 
   /** État de simulation d'un joueur neuf, placé en (x, y). */
@@ -51,7 +54,7 @@
       etat: 'libre', t: 0, atk: '', charge: 0, bouclier: C.BOUCLIER_MAX,
       gel: 0, invul: 0, traverse: 0, prev: 0, course: 0,
       rapide: false, esqAir: false, nAtk: 0, sonne: 0, elan: 0, cd1: 0, cd2: 0, cd3: 0,
-      airSpe: false, bordCd: 0,
+      airSpe: false, bordCd: 0, cdDash: 0, dashAir: false, arme: 0,
     };
   }
 
@@ -120,8 +123,53 @@
     }
     if (axe !== 0) p.dir = axe;
     lancerAttaque(p, nom);
-    p[recharge] = S[nom].recharge;
+    const def = S[nom];
+    // Capacité « changer d'arme » : on passe à l'arme suivante de la capacité 1.
+    if (def.changerArme && S.spe1 && S.spe1.armes) p.arme = (p.arme + 1) % S.spe1.armes.length;
+    // Une capacité à armes (capacité 1) a le temps de recharge de l'arme équipée.
+    p[recharge] = def.armes ? def.armes[p.arme % def.armes.length].recharge : def.recharge;
     return true;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Dash : une impulsion rapide, au sol ou en l'air (une fois par saut)
+  // ---------------------------------------------------------------------------
+  const DASH_DUREE = 10;     // ticks
+  const DASH_RECHARGE = 40;  // ticks avant de pouvoir recommencer
+
+  /** Vitesse du dash : proportionnelle à la vitesse de course du personnage. */
+  function vitesseDash(S) {
+    return (S.dash && S.dash.vitesse) || S.course * 1.9;
+  }
+
+  function lancerDash(p, axe, S) {
+    if (p.cdDash > 0) return false;
+    if (!p.sol && p.dashAir) return false;
+    if (axe !== 0) p.dir = axe;
+    changerEtat(p, 'dash');
+    p.atk = p.sol ? 'sol' : 'air';
+    if (!p.sol) { p.dashAir = true; p.vy = 0; }
+    p.vx = p.dir * vitesseDash(S);
+    p.cdDash = (S.dash && S.dash.recharge) || DASH_RECHARGE;
+    p.elan = 0;
+    p.rapide = false;
+    p.course = 0;
+    return true;
+  }
+
+  function etatDash(p, touches, appui, axe, S) {
+    const duree = (S.dash && S.dash.duree) || DASH_DUREE;
+    p.vx = p.dir * vitesseDash(S) * (p.t > duree - 3 ? 0.7 : 1); // petit freinage final
+    if (!p.sol) p.vy = 0;
+    // Annulation : saut, attaque, capacité, attrape, bouclier ou esquive à tout moment
+    // après les premières images. L'action part avec l'élan du dash.
+    const annule = appui & (T.HAUT | T.SAUT | T.LEGER | T.FORT | T.SPECIAL | T.ATTRAPE | T.BOUCLIER | T.ESQUIVE);
+    if (p.t >= 3 && annule) {
+      changerEtat(p, 'libre');
+      etatLibre(p, touches, appui, axe, S);
+      return;
+    }
+    if (p.t >= duree) changerEtat(p, 'libre');
   }
 
   function sauter(p, vitesse) {
@@ -164,6 +212,7 @@
 
     if (p.sol) {
       // ----- Au sol -----
+      if ((appui & T.DASH) && lancerDash(p, axe, S)) return;
       if ((appui & T.SPECIAL) && lancerSpecial(p, bas, haut, axe, S)) return;
       if (appui & T.ATTRAPE) {
         if (axe !== 0) p.dir = axe;
@@ -234,6 +283,7 @@
     // ----- En l'air -----
     p.elan = 0;
     p.course = 0;
+    if ((appui & T.DASH) && lancerDash(p, axe, S)) return;
     if ((appui & T.SPECIAL) && lancerSpecial(p, bas, haut, axe, S)) return;
     if (appui & (T.LEGER | T.FORT)) {
       if (haut) lancerAttaque(p, 'air_haut');
@@ -352,6 +402,7 @@
     p.rapide = false;
     p.esqAir = false;
     p.airSpe = false;
+    p.dashAir = false;
     // Une attaque aérienne s'interrompt en touchant le sol.
     if (p.etat === 'attaque' && (p.atk.startsWith('air_') || p.atk === 'spe3')) changerEtat(p, 'libre');
   }
@@ -387,6 +438,7 @@
         p.sauts = S.sautsAir;
         p.esqAir = false;
         p.airSpe = false;
+        p.dashAir = false;
         p.rapide = false;
         p.invul = Math.max(p.invul, 40);
         return;
@@ -442,7 +494,7 @@
     const yAvant = p.y;
     const carte = C.carte;
 
-    if (p.sol) {
+    if (p.sol || p.etat === 'dash') {
       p.vy = 0;
     } else {
       p.vy += S.gravite;
@@ -527,6 +579,7 @@
     if (p.cd1 > 0) p.cd1--;
     if (p.cd2 > 0) p.cd2--;
     if (p.cd3 > 0) p.cd3--;
+    if (p.cdDash > 0) p.cdDash--;
     if (p.bordCd > 0) p.bordCd--;
     if (p.etat !== 'bouclier' && p.bouclier < C.BOUCLIER_MAX) {
       p.bouclier = Math.min(C.BOUCLIER_MAX, p.bouclier + 0.15);
@@ -537,6 +590,7 @@
       case 'charge': etatCharge(p, touches); break;
       case 'bouclier': etatBouclier(p, touches, appui, axe); break;
       case 'esquive': etatEsquive(p); break;
+      case 'dash': etatDash(p, touches, appui, axe, S); break;
       case 'sonne': etatSonne(p); break;
       case 'bord': etatBord(p, touches, appui, S); break;
       default: etatLibre(p, touches, appui, axe, S);

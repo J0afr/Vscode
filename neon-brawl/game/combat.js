@@ -10,7 +10,7 @@
 // résultat dans l'état envoyé par le serveur.
 // =============================================================================
 const C = require('./constants');
-const { PERSOS, infosAttaque } = require('./characters');
+const { PERSOS, ELEMENTS, infosAttaque } = require('./characters');
 const physics = require('./physics');
 
 const DELAI_REAPPARITION = 70; // ticks entre l'éjection et le retour en jeu
@@ -66,8 +66,8 @@ function resoudreCoups(joueurs, evenements) {
 
   for (const { a, v, infos, cx, cy } of coups) {
     const source = {
-      id: a.id, joueur: a, x: a.x, dir: a.dir, charge: a.charge,
-      element: infos.perso.element, puissance: infos.perso.puissance,
+      id: a.id, joueur: a, tireur: a, x: a.x, dir: a.dir, charge: a.charge,
+      element: infos.perso.element, puissance: infos.perso.puissance * (a.modPuiss || 1),
     };
     frapper(v, infos.attaque, source, evenements, cx, cy);
   }
@@ -85,10 +85,12 @@ function resoudreCoups(joueurs, evenements) {
  */
 function frapper(v, def, source, evenements, cx, cy) {
   const a = source.joueur || null;
+  const tireur = source.tireur || a;
   const element = source.element;
+  const mod = (ELEMENTS[element] && ELEMENTS[element].mod) || {};
   // Une attaque chargée à fond fait 40 % de dégâts en plus et éjecte plus loin.
   const charge = Math.min(1, (source.charge || 0) / C.CHARGE_MAX);
-  const degats = def.deg * source.puissance * (1 + 0.4 * charge);
+  const degats = def.deg * source.puissance * (1 + 0.4 * charge) * (mod.degatsPlus || 1);
   const sv = PERSOS[v.perso] || PERSOS.ondine;
   // Point d'impact, à mi-chemin entre la zone de frappe et la victime.
   const ix = Math.round((cx + v.x) / 2);
@@ -97,7 +99,7 @@ function frapper(v, def, source, evenements, cx, cy) {
   // --- Coup paré par le bouclier (l'attrape, elle, passe au travers) ---
   if (v.etat === 'bouclier' && !def.attrape) {
     // Terre : les coups de terre usent le bouclier bien plus vite.
-    v.bouclier -= degats * (element === 'terre' ? 2.2 : 1.3);
+    v.bouclier -= degats * (element === 'terre' ? 2.2 : (mod.bouclierDmg || 1.3));
     v.vx = (v.x >= source.x ? 1 : -1) * 2.5;
     v.gel = 4;
     if (a) a.gel = 4;
@@ -139,7 +141,7 @@ function frapper(v, def, source, evenements, cx, cy) {
 
   // Eau : une poussée de base plus forte.
   const base = def.base + (element === 'eau' ? 1.3 : 0);
-  const ejection = ((base + v.degats * def.ech) * (1 + 0.3 * charge)) / sv.poids;
+  const ejection = ((base + v.degats * def.ech) * (1 + 0.3 * charge) * (mod.ejectionPlus || 1)) / (sv.poids * (v.modPoids || 1));
 
   // Air : les coups qui partent vers l'avant envoient plus haut.
   const releve = element === 'air' && def.angle >= 0 && def.angle < 75 ? 14 : 0;
@@ -166,6 +168,9 @@ function frapper(v, def, source, evenements, cx, cy) {
   if (element === 'feu') v.brulure = 120;                       // brûle pendant 2 s
   if (element === 'foudre') v.gel += 6;                         // paralysie
   if (element === 'glace') v.sonne = Math.min(115, Math.round(v.sonne * 1.3)); // gel
+  if (mod.gelPlus) v.gel += mod.gelPlus;                                        // lumière : impact marqué
+  if (mod.poison) v.poison = mod.poison;                                        // ombre : poison
+  if (mod.soin && tireur && tireur !== v) tireur.degats = Math.max(0, tireur.degats - mod.soin); // nature : sève
 
   evenements.push({
     t: 'coup',
@@ -178,9 +183,15 @@ function frapper(v, def, source, evenements, cx, cy) {
 /** Effets qui durent dans le temps : la brûlure du feu (+3 % en 2 secondes). */
 function effetsContinus(joueurs) {
   for (const p of joueurs) {
-    if (!(p.brulure > 0) || p.etat === 'mort') continue;
-    p.brulure--;
-    if (p.brulure % 20 === 0) p.degats += 0.5;
+    if (p.etat === 'mort') continue;
+    if (p.brulure > 0) {
+      p.brulure--;
+      if (p.brulure % 20 === 0) p.degats += 0.5;
+    }
+    if (p.poison > 0) {
+      p.poison--;
+      if (p.poison % 25 === 0) p.degats += 0.6;
+    }
   }
 }
 
@@ -221,9 +232,23 @@ function reapparaitre(p, x, y = C.carte.yApparition) {
   Object.assign(p, physics.nouvelEtat(x, y), garde);
   p.degats = 0;
   p.brulure = 0;
+  p.poison = 0;
   p.sauts = (PERSOS[p.perso] || PERSOS.ondine).sautsAir;
   p.invul = 120;
   p.dir = x < C.carte.centre ? 1 : -1;
 }
 
-module.exports = { cercleToucheCorps, resoudreCoups, frapper, effetsContinus, gererSorties, reapparaitre };
+const arrondi = (n) => Math.round(n * 100) / 100;
+
+/** Version d'un joueur envoyée aux navigateurs (serveur, mode local et mode sans serveur). */
+function instantaneJoueur(j) {
+  const s = {
+    id: j.id, nom: j.nom, couleur: j.couleur, perso: j.perso,
+    degats: Math.round(j.degats), vies: j.vies, acq: j.acquitte,
+    brulure: j.brulure > 0 ? 1 : 0, poison: j.poison > 0 ? 1 : 0,
+  };
+  for (const champ of physics.CHAMPS) s[champ] = typeof j[champ] === 'number' ? arrondi(j[champ]) : j[champ];
+  return s;
+}
+
+module.exports = { cercleToucheCorps, resoudreCoups, frapper, effetsContinus, gererSorties, reapparaitre, instantaneJoueur };
